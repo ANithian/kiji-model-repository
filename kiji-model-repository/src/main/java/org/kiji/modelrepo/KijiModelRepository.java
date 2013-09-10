@@ -55,6 +55,7 @@ import org.kiji.schema.KijiRowScanner;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableReader.KijiScannerOptions;
+import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.filter.ColumnValueEqualsRowFilter;
@@ -168,6 +169,14 @@ public final class KijiModelRepository implements Closeable {
   public void close() throws IOException {
     mKijiMetaTable.close();
     mKijiTable.release();
+  }
+
+  /**
+   * Returns the URI of the model repository table.
+   * @return the URI of the model repository table.
+   */
+  public KijiURI getURI() {
+    return mKijiTable.getURI();
   }
 
   /**
