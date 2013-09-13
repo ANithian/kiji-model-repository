@@ -19,6 +19,8 @@
 
 package org.kiji.modelrepo;
 
+import static org.kiji.modelrepo.ModelArtifact.getModelName;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -62,7 +64,6 @@ import org.kiji.schema.filter.ColumnValueEqualsRowFilter;
 import org.kiji.schema.filter.FormattedEntityIdRowFilter;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.util.ProtocolVersion;
-
 /**
  *
  * A class providing an API to install and access the model repository Kiji table.
@@ -513,25 +514,6 @@ public final class KijiModelRepository implements Closeable {
   }
 
   /**
-   * Returns the canonical name of a model life cycle given the group and artifact name. This
-   * is here as the layout supports a single name field but other parts of the system support
-   * the separate group/artifact names.
-   *
-   * @param groupName the group name of the lifecycle.
-   * @param artifactName the artifact name of the lifecycle.
-   * @return the canonical name of the model lifecycle suitable for storage in the Kiji table
-   *         storing deployed lifecycles.
-   */
-  private static String getModelName(String groupName, String artifactName) {
-    Preconditions.checkNotNull(groupName);
-    Preconditions.checkNotNull(artifactName);
-    Preconditions.checkArgument(groupName.length() > 0, "Group name must be nonempty string.");
-    Preconditions.checkArgument(artifactName.length() > 0,
-        "Artifact name must be nonempty string.");
-    return (groupName + "." + artifactName).intern();
-  }
-
-  /**
    * Check that every model in the model repository table is associated with a valid model location
    * in the model repository, i.e. that a valid model artifact is found at the model location.
    *
@@ -543,13 +525,6 @@ public final class KijiModelRepository implements Closeable {
    */
   public List<Exception> checkModelLocations(final boolean download) throws IOException {
     final List<Exception> issues = Lists.newArrayList();
-    final URI baseURI;
-    try {
-      baseURI = getCurrentBaseURI(mKijiMetaTable);
-    } catch (IOException e) {
-      issues.add(new ModelRepositoryConsistencyException("Base URI can not be acquired."));
-      return issues;
-    }
 
     // Read model repository table and validate each model location url.
     final KijiTableReader reader = mKijiTable.openTableReader();
@@ -562,8 +537,8 @@ public final class KijiModelRepository implements Closeable {
         new KijiScannerOptions());
     try {
       for (KijiRowData row : scanner) {
-        issues.addAll((new ModelArtifact(row, Sets.newHashSet(ModelArtifact.LOCATION_KEY)))
-            .checkModelLocation(baseURI, download));
+        issues.addAll((new ModelArtifact(row, Sets.newHashSet(ModelArtifact.LOCATION_KEY),
+            mCurrentBaseStorageURI)).checkModelLocation(download));
       }
     } finally {
       scanner.close();
@@ -632,7 +607,7 @@ public final class KijiModelRepository implements Closeable {
     final KijiRowScanner scanner = reader.getScanner(dataRequestBuilder.build(), options);
     try {
       for (final KijiRowData row : scanner) {
-        setOfModels.add(new ModelArtifact(row, fields));
+        setOfModels.add(new ModelArtifact(row, fields, mCurrentBaseStorageURI));
       }
     } finally {
       scanner.close();
