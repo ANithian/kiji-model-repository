@@ -44,8 +44,6 @@
     <kiji-mr.version>1.1.0</kiji-mr.version>
     <kiji-modelrepo.version>0.1.0-SNAPSHOT</kiji-modelrepo.version>
     <fake-hbase.version>0.1.0</fake-hbase.version>
-    <hadoop.version>2.0.0-mr1-cdh4.1.2</hadoop.version>
-    <hbase.version>0.94.2-cdh4.2.1</hbase.version>
     <jetty.version>8.1.12.v20130726</jetty.version>
     <junit.version>4.11</junit.version>
   </properties>
