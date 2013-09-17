@@ -34,133 +34,100 @@ import scala.io.Source
 import java.io.PrintWriter
 import org.kiji.schema.Kiji
 import org.kiji.schema.KijiURI
+import scala.collection.mutable.ListBuffer
 
-class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int) extends Runnable {
+/**
+ * Performs the actual deployment/undeployment of model lifecycles by scanning the model
+ * repository for changes. The scanner will download any necessary artifacts from the
+ * model repository and deploy the necessary files so that the application is available for
+ * remote scoring.
+ */
+class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int)
+extends Runnable {
 
   val LOG = LoggerFactory.getLogger(classOf[ModelRepoScanner])
 
   // Setup some constants that will get used when generating the various files to deploy
   // the lifecycle.
-  val CONTEXT_PATH = "%CONTEXT_PATH%"
-  val MODEL_NAME = "%MODEL_NAME%"
-  val MODEL_GROUP = "%MODEL_GROUP%"
-  val MODEL_ARTIFACT = "%MODEL_ARTIFACT%"
-  val MODEL_VERSION = "%MODEL_VERSION%"
-  val MODEL_REPO_URI = "%MODEL_REPO_URI%"
+  val CONTEXT_PATH = "CONTEXT_PATH"
+  val MODEL_NAME = "MODEL_NAME"
+  val MODEL_GROUP = "MODEL_GROUP"
+  val MODEL_ARTIFACT = "MODEL_ARTIFACT"
+  val MODEL_VERSION = "MODEL_VERSION"
+  val MODEL_REPO_URI = "MODEL_REPO_URI"
 
   // Some file constants
   val OVERLAY_FILE = "/org/kiji/scoring/server/instance/overlay.xml"
   val WEB_OVERLAY_FILE = "/org/kiji/scoring/server/instance/web-overlay.xml"
   val JETTY_TEMPLATE_FILE = "/org/kiji/scoring/server/template/template.xml"
 
-  val mDeployedLifeCycles = Set[ModelArtifact]() //TODO: How to seed this from disk?
-  val mDeployedTemplates = Set[String]()
+  val INSTANCES_FOLDER = new File(ScoringServer.MODELS_FOLDER, OverlayedAppProvider.INSTANCES)
+  val WEBAPPS_FOLDER = new File(ScoringServer.MODELS_FOLDER, OverlayedAppProvider.WEBAPPS)
+  val TEMPLATES_FOLDER = new File(ScoringServer.MODELS_FOLDER, OverlayedAppProvider.TEMPLATES)
 
-  cleanupInvalidDeployments
+  var mIsRunning = true
 
-  // Initialize the deployed lifecycles map from the model-repo
-  // Then go through the model/webapps, templates, instances and ensure that stuff in there
-  // is valid. Also ensure that stuff that *is* valid is actually enabled (i.e. contained in the
-  // deployed lifecycles map)
+  /**
+   *  Stores a set of deployed lifecycles (identified by group.artifact-version) mapping
+   *  to the actual folder that houses this lifecycle.
+   */
+  private val mLifecycleToInstanceDir = Map[ModelArtifact, File]()
 
-  //1) Cleanup invalid deployments
-  def cleanupInvalidDeployments() {
-    // Get the list of webapps
-    val deployedWebApps = new File(ScoringServer.MODELS_FOLDER,
-      OverlayedAppProvider.WEBAPPS).listFiles()
-    if (deployedWebApps != null) {
-      for (webapp <- deployedWebApps) {
-        // 1) Anything not a war file gets deleted.
-        if (FilenameUtils.getExtension(webapp.getAbsolutePath()) != "war") {
-          LOG.info("Removing invalid web application " + webapp.getAbsolutePath())
-          if (webapp.isDirectory()) {
-            FileUtils.deleteDirectory(webapp)
-          } else {
-            webapp.delete()
-          }
-        } else {
-          // 2) For each war file we check that it is a member of the enabled lifecycles
-          // The war file name is a concatenation of the group + artifact + version ("." separated)
-          val webappName = FilenameUtils.getBaseName(webapp.getName())
-          if (!mDeployedLifeCycles.contains(webappName)) {
-            LOG.info("Removing invalid web application " + webapp.toString())
-            webapp.delete()
-          }
-        }
-      }
-    }
-    val deployedTemplates = new File(ScoringServer.MODELS_FOLDER,
-      OverlayedAppProvider.TEMPLATES).listFiles()
-    if (deployedTemplates != null) {
-      for (template <- deployedTemplates) {
-        // Here we need to check that the deployed templates (i.e. template_name=warfilename)
-        // refers to a war file that is enabled.
-        if (!template.isDirectory()) {
-          LOG.info("Removing invalid template " + template.toString())
-          template.delete()
-        } else {
-          val (templateName, classifier) = parseContextDirectoryName(template.getName())
-          // Classifier has to be
-          if (classifier == null || !mDeployedLifeCycles.contains(classifier)) {
-            LOG.info("Removing invalid template " + template.toString())
-            FileUtils.deleteDirectory(template)
-          } else {
-            mDeployedTemplates.add(classifier)
-          }
-        }
-      }
-    }
+  /**
+   *  Stores a map of model artifact locations to their corresponding template name so that
+   *  instances can be properly mapped when created against a war file that has already
+   *  been previously deployed. The key is the location string from the location column
+   *  in the model repo and the value is the fully qualified name of the lifecycle
+   *  (group.artifact-version) to which this location is mapped to.
+   */
+  private val mDeployedWarFiles = Map[String, String]()
 
-    val deployedInstances = new File(ScoringServer.MODELS_FOLDER,
-      OverlayedAppProvider.INSTANCES).listFiles()
-    if (deployedInstances != null) {
-      for (instance <- deployedInstances) {
-        // Here we need to check that the deployed instance (i.e. instance_name=template_name)
-        // refers to a template that we know is valid (because we just checked it above)
-        if (!instance.isDirectory()) {
-          LOG.info("Removing invalid template " + instance.toString())
-          instance.delete()
-        } else {
-          val (templateName, classifier) = parseContextDirectoryName(instance.getName())
-          // Classifier has to be
-          if (classifier == null || !mDeployedTemplates.contains(classifier)) {
-            LOG.info("Removing invalid template " + instance.toString())
-            FileUtils.deleteDirectory(instance)
-          }
-        }
-      }
-    }
+  /**
+   * Turns off the internal run flag to safely stop the scanning of the model repository
+   * table.
+   */
+  def shutdown() {
+    mIsRunning = false
   }
 
   def run(): Unit = {
-    while (true) {
+    while (mIsRunning) {
+      LOG.debug("Scanning model repository for changes...")
       val currentLifecycles = getAllEnabledLifecycles
-      val toRemove = List[ModelArtifact]()
+      val toRemove = ListBuffer[ModelArtifact]()
 
       // Detect changes (add or remove)
-      for (lifeCycle <- mDeployedLifeCycles) {
+      for ((lifeCycle, location) <- mLifecycleToInstanceDir) {
         if (currentLifecycles.contains(lifeCycle)) {
           currentLifecycles.remove(lifeCycle)
         } else {
           // We know that lifeCycle doesn't exist in the set of currently enabled
           // lifecycles so it's an undeploy
-
+          LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
+              " location = " + location)
+          FileUtils.deleteDirectory(location)
           toRemove.add(lifeCycle)
         }
       }
-
-      mDeployedLifeCycles.removeAll(toRemove)
+      toRemove.foreach(mLifecycleToInstanceDir.remove(_))
 
       for (lifeCycleToAdd <- currentLifecycles) {
         // These are the ones who are not in the currently enabled set of lifecycles
         // so we deploy and add
-
-        mDeployedLifeCycles.add(lifeCycleToAdd)
+        LOG.info("Deploying artifact " + lifeCycleToAdd.getFullyQualifiedModelName())
+        deployArtifact(lifeCycleToAdd)
       }
+
       Thread.sleep(mScanIntervalSeconds * 1000)
     }
   }
 
+  /**
+   * Deploys the specified model artifact by either creating a new Jetty instance or by
+   * downloading the artifact and setting up a new template/instance in Jetty.
+   *
+   * @param artifact is the specified ModelArtifact to deploy.
+   */
   private def deployArtifact(artifact: ModelArtifact) = {
     // Deploying requires a few things.
     // If we have deployed this artifact's war file before:
@@ -176,52 +143,91 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     templateParamValues.put(CONTEXT_PATH, (artifact.getGroupName() + "/" +
       artifact.getArtifactName()).replace('.', '/') + "/" + artifact.getModelVersion().toString())
 
-    if (mDeployedTemplates.contains(fullyQualifiedName)) {
+    if (mDeployedWarFiles.contains(artifact.getLocation())) {
       // 1) Create a new instance and done.
-      createNewInstance(artifact, templateParamValues)
+      createNewInstance(artifact, mDeployedWarFiles.get(artifact.getLocation()).get,
+        templateParamValues)
     } else {
       // If not:
-      // 1) Download the artifact to a temporary location and moving to the proper location
-      val tempArtifactFile = File.createTempFile("artifact", "war")
-      artifact.downloadArtifact(tempArtifactFile)
-      FileUtils.moveFile(tempArtifactFile, new File(artifact.getFullyQualifiedModelName()))
-      // 2) Creating a new Jetty template to map to the war file
-      val tempTemplateDir = File.createTempFile("template", "")
+      // 1) Download the artifact to a temporary location
+      val artifactFile = File.createTempFile("artifact", "war")
+      val finalArtifactName = artifact.getFullyQualifiedModelName() + ".war"
+
+      artifact.downloadArtifact(artifactFile)
+
+      // 2) Create a new Jetty template to map to the war file
+      // Template is (fullyQualifiedName=warFileBase)
+      val templateDirName = String.format("%s=%s", fullyQualifiedName,
+          artifact.getFullyQualifiedModelName());
+
+      val tempTemplateDir = new File(Files.createTempDir(), "WEB-INF")
+      tempTemplateDir.mkdirs()
+
       translateFile(JETTY_TEMPLATE_FILE, new File(tempTemplateDir, "template.xml"),
         Map[String, String]())
-      val finalTemplateDir = new File(ScoringServer.MODELS_FOLDER, OverlayedAppProvider.TEMPLATES)
-      Files.move(tempTemplateDir, finalTemplateDir)
+      artifactFile.renameTo(new File(WEBAPPS_FOLDER, finalArtifactName))
 
+      val moveResult = tempTemplateDir.getParentFile().renameTo(new File(TEMPLATES_FOLDER,
+          templateDirName))
       // 3) Create a new instance.
-      createNewInstance(artifact, templateParamValues)
+      createNewInstance(artifact, fullyQualifiedName, templateParamValues)
 
-      mDeployedTemplates.add(fullyQualifiedName)
+      mDeployedWarFiles.put(artifact.getLocation(), fullyQualifiedName)
     }
   }
 
-  private def createNewInstance(artifact: ModelArtifact, templateParams: Map[String, String]) = {
+  /**
+   * Creates a new Jetty overlay instance.
+   *
+   * @param artifact is the ModelArtifact to deploy.
+   * @param templateName is the name of the template to which this instance belongs.
+   * @param bookmarkParams contains a map of parameters and values used when configuring
+   *        the WEB-INF specific files. An example of a parameter includes the context name
+   *        used when addressing this lifecycle via HTTP which is dynamically populated based
+   *        on the fully qualified name of the ModelArtifact.
+   */
+  private def createNewInstance(artifact: ModelArtifact, templateName: String,
+    bookmarkParams: Map[String, String]) = {
     // This will create a new instance by leveraging the template files on the classpath
     // and create the right directory. Maybe first create the directory in a temp location and
     // move to the right place.
-    mDeployedLifeCycles.add(artifact)
-    val tempInstanceDir = File.createTempFile("instance", System.currentTimeMillis().toString)
+    val tempInstanceDir = new File(Files.createTempDir(), "WEB-INF")
     tempInstanceDir.mkdir()
 
-    translateFile(OVERLAY_FILE, new File(tempInstanceDir, "overlay.xml"), templateParams)
-    translateFile(WEB_OVERLAY_FILE, new File(tempInstanceDir, "web-overlay.xml"), templateParams)
+    val instanceDirName = String.format("%s=%s", templateName,
+        artifact.getFullyQualifiedModelName())
 
-    val instanceDir = new File(ScoringServer.MODELS_FOLDER, OverlayedAppProvider.INSTANCES)
-    Files.move(tempInstanceDir, instanceDir)
+    translateFile(OVERLAY_FILE, new File(tempInstanceDir, "overlay.xml"), bookmarkParams)
+    translateFile(WEB_OVERLAY_FILE, new File(tempInstanceDir, "web-overlay.xml"), bookmarkParams)
+
+    val finalInstanceDir = new File(INSTANCES_FOLDER, instanceDirName)
+    tempInstanceDir.getParentFile().renameTo(finalInstanceDir)
+
+    mLifecycleToInstanceDir.put(artifact, finalInstanceDir)
+    FileUtils.deleteDirectory(tempInstanceDir)
   }
 
-  private def translateFile(filePath: String, targetFile: File, fileParams: Map[String, String]) {
+  /**
+   * Given a "template" WEB-INF .xml file on the classpath, this will produce a translated
+   * version of the file replacing any "bookmark" values (i.e. "%PARAM%") with their actual values
+   * which are dynamically generated based on the artifact being deployed.
+   *
+   * @param filePath is the path to the xml file on the classpath (bundled with this scoring server)
+   * @param targetFile is the path where the file is going to be written.
+   * @param bookmarkParams contains a map of parameters and values used when configuring
+   *        the WEB-INF specific files. An example of a parameter includes the context name
+   *        used when addressing this lifecycle via HTTP which is dynamically populated based
+   *        on the fully qualified name of the ModelArtifact.
+   */
+  private def translateFile(filePath: String, targetFile: File,
+      bookmarkParams: Map[String, String]) {
     val fileStream = Source.fromInputStream(getClass.getResourceAsStream(filePath))
     val fileWriter = new PrintWriter(targetFile)
     for (line <- fileStream.getLines) {
-      val newLine = if (line.matches("%[A-Z_]+%")) {
-        fileParams.foldLeft(line) { (result, currentKV) =>
+      val newLine = if (line.matches(".*?%[A-Z_]+%.*?")) {
+        bookmarkParams.foldLeft(line) { (result, currentKV) =>
           val (key, value) = currentKV
-          line.replace("%" + key + "%", value)
+          result.replace("%" + key + "%", value)
         }
       } else {
         line
@@ -232,6 +238,20 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     fileWriter.close()
   }
 
+  /**
+   * Given a directory name, will extract a tuple of template name and classifier name. In Jetty's
+   * overlay deployer, the template directory and instance directory have a name formatted like:
+   * (name=value OR name--value). Much of this code was borrowed from Jetty and converted
+   * to Scala with some names changed for readability purposes.
+   * <br/><br/>
+   * For templates, "name" is the given abstract template name and "value" is the concrete
+   * base name of the war file (without the .war extension).
+   * <br/>
+   * For instances, "name" is the name of the template from above and "value" is the concrete
+   * name that can be arbitrarily given.
+   *
+   * @returns a 2-tuple containing the two aforementioned parts of the specified directory.
+   */
   private def parseContextDirectoryName(directoryName: String): (String, String) = {
     // Borrowed from OverlayedAppProvider.ClassifiedOverlay constructor
 
@@ -255,15 +275,11 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     return nameAndClassifier
   }
 
+  /**
+   * Returns all the currently enabled lifecycles from the model repository.
+   * @returns all the currently enabled lifecycles from the model repository.
+   */
   private def getAllEnabledLifecycles = {
     mKijiModelRepo.getModelLifecycles(null, 0, Long.MaxValue, 1, true)
-  }
-}
-
-object ModelRepoScanner {
-  def main(args: Array[String]): Unit = {
-    val kijiURI = KijiURI.newBuilder("kiji://.env/default").build()
-    val modelRepo = KijiModelRepository.open(Kiji.Factory.open(kijiURI))
-    val scanner = new ModelRepoScanner(modelRepo, 1)
   }
 }

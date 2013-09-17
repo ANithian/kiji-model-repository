@@ -20,15 +20,21 @@
 package org.kiji.scoring.server
 
 import java.io.File
+
 import org.eclipse.jetty.deploy.DeploymentManager
 import org.eclipse.jetty.overlays.OverlayedAppProvider
 import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.server.handler.ContextHandlerCollection
 import org.eclipse.jetty.server.handler.DefaultHandler
 import org.eclipse.jetty.server.handler.HandlerCollection
+import org.kiji.modelrepo.KijiModelRepository
+
+import org.kiji.modelrepo.KijiModelRepository
+import org.kiji.schema.Kiji
+import org.kiji.schema.KijiURI
+
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import java.io.StringWriter
 
 case class ServerConfiguration(port: Int, repo_uri: String, repo_scan_interval: Int)
 
@@ -53,6 +59,16 @@ object ScoringServer {
     }
 
     val config = getConfig
+    val kijiURI = KijiURI.newBuilder(config.repo_uri).build()
+    val kiji = Kiji.Factory.open(kijiURI)
+    val kijiModelRepo = KijiModelRepository.open(kiji)
+
+    // Start the model lifecycle scanner thread that will scan the model repository
+    // for changes.
+    val lifeCycleScanner = new ModelRepoScanner(kijiModelRepo, config.repo_scan_interval)
+    val lifeCycleScannerThread = new Thread(lifeCycleScanner)
+    lifeCycleScannerThread.start()
+
     val server = new Server(config.port)
     val handlers = new HandlerCollection()
 
@@ -73,6 +89,10 @@ object ScoringServer {
     server.setHandler(handlers);
     server.addBean(deploymentManager)
 
+    // Gracefully shutdown the deployment thread to let it finish anything that it may be doing
+    sys.ShutdownHookThread {
+      lifeCycleScanner.shutdown
+    }
     server.start();
     server.join();
   }
