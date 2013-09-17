@@ -45,6 +45,7 @@ import java.io.OutputStreamWriter
 import org.kiji.mapreduce.kvstore.KeyValueStore
 import org.kiji.web.KijiWebContext
 import com.google.common.base.Preconditions
+import org.kiji.express.avro.AvroInputSpec
 
 /**
  * Servlet implementation that executes the scoring phase of a model lifecycle deployed
@@ -83,11 +84,11 @@ class GenericScoringServlet extends HttpServlet {
 
       // TODO: Is is alright that I am getting the input spec directly through the Avro
       // record as opposed to through the KijiExpress wrapper classes?
-      val inputConfig: AvroKijiInputSpec = environmentAvro.getScoreEnvironment()
+      val inputConfig: AvroInputSpec = environmentAvro.getScoreEnvironment()
         .getInputSpec()
-        .asInstanceOf[AvroKijiInputSpec]
+        .asInstanceOf[AvroInputSpec]
 
-      mInputKijiURI = inputConfig.getTableUri()
+      mInputKijiURI = inputConfig.getKijiSpecification().getTableUri()
 
       val defAvro = ToJson.toJsonString(definitionAvro)
       val envAvro = ToJson.toJsonString(environmentAvro)
