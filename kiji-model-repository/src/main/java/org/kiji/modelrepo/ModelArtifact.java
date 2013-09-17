@@ -359,7 +359,6 @@ public class ModelArtifact {
 
   @Override
   public int hashCode() {
-    // TODO Auto-generated method stub
     return getFullyQualifiedModelName().hashCode();
   }
 
