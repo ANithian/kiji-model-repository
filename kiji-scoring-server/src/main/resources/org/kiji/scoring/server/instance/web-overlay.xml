@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
 <!--
  * (c) Copyright 2013 WibiData, Inc.
  *
@@ -24,7 +25,6 @@
   relies on a generic scoring servlet and parameterizes this with information so that this servlet
   can retrieve environment/definition configuration from the model repository.
  -->
-<?xml version="1.0" encoding="ISO-8859-1" ?>
 
 <web-app xmlns="http://java.sun.com/xml/ns/j2ee"
 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -36,7 +36,7 @@ version="2.4">
 
   <servlet>
     <servlet-name>%MODEL_NAME%</servlet-name>
-    <servlet-class>org.kiji.web.GenericScoringServlet</servlet-class>
+    <servlet-class>org.kiji.scoring.server.GenericScoringServlet</servlet-class>
     <init-param>
       <param-name>model-group</param-name>
       <param-value>%MODEL_GROUP%</param-value>
