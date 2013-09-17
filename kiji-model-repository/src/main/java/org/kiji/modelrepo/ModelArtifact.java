@@ -201,7 +201,7 @@ public class ModelArtifact {
    * group + artifact + version. Specifically it's "group.artifact-version"
    *
    * @return the canonical name of a model life cycle which is the concatenation of the
-   *     group + artifact + version. Specifically it's "group.artifact-version"
+   *         group + artifact + version. Specifically it's "group.artifact-version"
    */
   public String getFullyQualifiedModelName() {
     return getModelName(mGroupName, mArtifactName) + "-" + mArtifactVersion;
@@ -240,7 +240,7 @@ public class ModelArtifact {
     while (null != productionReadyEntry || null != messagesEntry) {
       if ((null == productionReadyEntry)
           || ((null != messagesEntry)
-              && (productionReadyEntry.getKey().compareTo(messagesEntry.getKey()) >= 0))) {
+          && (productionReadyEntry.getKey().compareTo(messagesEntry.getKey()) >= 0))) {
         modelStringBuilder.append(String.format("%s [%d]: %s%n", "message",
             messagesEntry.getKey(),
             messagesEntry.getValue()));
@@ -266,6 +266,7 @@ public class ModelArtifact {
   /**
    * Check that this model artifact is associated with a valid model location
    * in the model repository, i.e. that a valid model artifact is found at the model location.
+   *
    * @param download set to true allows the method to download and validate the artifact file.
    *
    * @return List of exceptions of inconsistent model locations over time.
@@ -293,14 +294,14 @@ public class ModelArtifact {
               String.format("%s.%s", this.getGroupName(), this.getArtifactName()),
               this.getModelVersion(),
               String.format("Artifact from %s is not a valid jar/war file.",
-              location.toString())));
+                  location.toString())));
         }
       } else {
         issues.add(new ModelRepositoryConsistencyException(
             String.format("%s.%s", this.getGroupName(), this.getArtifactName()),
             this.getModelVersion(),
             String.format("Unable to retrieve artifact from %s.",
-            location.toString())));
+                location.toString())));
       }
       // Delete artifactFile as it's no use any more.
       artifactFile.delete();
@@ -313,7 +314,7 @@ public class ModelArtifact {
             String.format("%s.%s", this.getGroupName(), this.getArtifactName()),
             this.getModelVersion(),
             String.format("Unable to find artifact at %s.",
-            location.toString())));
+                location.toString())));
       } finally {
         if (null != artifactInputStream) {
           artifactInputStream.close();
@@ -325,12 +326,17 @@ public class ModelArtifact {
 
   /**
    * Copies artifact from URL to file on disk.
+   *
    * @param file target
    *
    * @return true iff copy happen unexceptionally
+   * @throws IOException if there is a problem downloading the file.
    */
   public boolean downloadArtifact(final File file) throws IOException {
-    final URL location = mBaseStorageURI.resolve(this.getLocation()).toURL();
+    final URI resolvedURI = URI.create(mBaseStorageURI.toString() + "/"
+       + mLocation);
+    final URL location = resolvedURI.toURL();
+
     LOG.info("Preparing to download model artifact to temporary location {}",
         file.getAbsolutePath());
     try {
@@ -341,15 +347,13 @@ public class ModelArtifact {
     return true;
   }
 
-
   @Override
   public boolean equals(Object rhs) {
-    if(rhs == null) {
+    if (rhs == null) {
       return false;
     } else {
-    return (rhs instanceof ModelArtifact &&
-        ((ModelArtifact)rhs).getFullyQualifiedModelName()
-        .equals(this.getFullyQualifiedModelName()));
+      return (rhs instanceof ModelArtifact && ((ModelArtifact) rhs).getFullyQualifiedModelName()
+          .equals(this.getFullyQualifiedModelName()));
     }
   }
 
