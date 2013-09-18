@@ -58,14 +58,28 @@ object ScoringServer {
       return
     }
 
-    val config = getConfig
+    val server = getServer(null)
+    server.start()
+    server.join();
+  }
+
+  /**
+   * Constructs a Jetty Server instance configured using the conf/configuration.json.
+   * @param confFile is the configuration file used to
+   * @returns a constructed Jetty server.
+   */
+  def getServer(baseDir: File):Server = {
+
+    val confFile = new File(baseDir, String.format("%s/%s", CONF_FOLDER, CONF_FILE))
+    val config = getConfig(confFile)
+
     val kijiURI = KijiURI.newBuilder(config.repo_uri).build()
     val kiji = Kiji.Factory.open(kijiURI)
     val kijiModelRepo = KijiModelRepository.open(kiji)
 
     // Start the model lifecycle scanner thread that will scan the model repository
     // for changes.
-    val lifeCycleScanner = new ModelRepoScanner(kijiModelRepo, config.repo_scan_interval)
+    val lifeCycleScanner = new ModelRepoScanner(kijiModelRepo, config.repo_scan_interval, baseDir)
     val lifeCycleScannerThread = new Thread(lifeCycleScanner)
     lifeCycleScannerThread.start()
 
@@ -76,7 +90,7 @@ object ScoringServer {
     val deploymentManager = new DeploymentManager()
     val overlayedProvider = new OverlayedAppProvider
 
-    overlayedProvider.setScanDir(new File(MODELS_FOLDER))
+    overlayedProvider.setScanDir(new File(baseDir, MODELS_FOLDER))
     // For now scan this directory once per second.
     overlayedProvider.setScanInterval(1)
 
@@ -93,8 +107,7 @@ object ScoringServer {
     sys.ShutdownHookThread {
       lifeCycleScanner.shutdown
     }
-    server.start();
-    server.join();
+    server
   }
 
   /**
@@ -120,11 +133,12 @@ object ScoringServer {
   /**
    * Returns the ServerConfiguration object constructed from conf/configuration.json.
    *
+   * @param confFile is the location of the configuration used to configure the server.
    * @returns the ServerConfiguration object constructed from conf/configuration.json.
    */
-  def getConfig: ServerConfiguration = {
+  def getConfig(confFile: File): ServerConfiguration = {
     val configMapper = new ObjectMapper
     configMapper.registerModule(DefaultScalaModule)
-    configMapper.readValue(new File(CONF_FOLDER, CONF_FILE), classOf[ServerConfiguration])
+    configMapper.readValue(confFile, classOf[ServerConfiguration])
   }
 }

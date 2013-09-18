@@ -42,8 +42,9 @@ import scala.collection.mutable.ListBuffer
  * model repository and deploy the necessary files so that the application is available for
  * remote scoring.
  */
-class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int)
-extends Runnable {
+class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int,
+  mBaseDir: File)
+  extends Runnable {
 
   val LOG = LoggerFactory.getLogger(classOf[ModelRepoScanner])
 
@@ -93,32 +94,35 @@ extends Runnable {
   def run(): Unit = {
     while (mIsRunning) {
       LOG.debug("Scanning model repository for changes...")
-      val currentLifecycles = getAllEnabledLifecycles
-      val toRemove = ListBuffer[ModelArtifact]()
-
-      // Detect changes (add or remove)
-      for ((lifeCycle, location) <- mLifecycleToInstanceDir) {
-        if (currentLifecycles.contains(lifeCycle)) {
-          currentLifecycles.remove(lifeCycle)
-        } else {
-          // We know that lifeCycle doesn't exist in the set of currently enabled
-          // lifecycles so it's an undeploy
-          LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
-              " location = " + location)
-          FileUtils.deleteDirectory(location)
-          toRemove.add(lifeCycle)
-        }
-      }
-      toRemove.foreach(mLifecycleToInstanceDir.remove(_))
-
-      for (lifeCycleToAdd <- currentLifecycles) {
-        // These are the ones who are not in the currently enabled set of lifecycles
-        // so we deploy and add
-        LOG.info("Deploying artifact " + lifeCycleToAdd.getFullyQualifiedModelName())
-        deployArtifact(lifeCycleToAdd)
-      }
-
+      checkForUpdates
       Thread.sleep(mScanIntervalSeconds * 1000)
+    }
+  }
+
+  def checkForUpdates() {
+    val currentLifecycles = getAllEnabledLifecycles
+    val toRemove = ListBuffer[ModelArtifact]()
+
+    // Detect changes (add or remove)
+    for ((lifeCycle, location) <- mLifecycleToInstanceDir) {
+      if (currentLifecycles.contains(lifeCycle)) {
+        currentLifecycles.remove(lifeCycle)
+      } else {
+        // We know that lifeCycle doesn't exist in the set of currently enabled
+        // lifecycles so it's an undeploy
+        LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
+          " location = " + location)
+        FileUtils.deleteDirectory(location)
+        toRemove.add(lifeCycle)
+      }
+    }
+    toRemove.foreach(mLifecycleToInstanceDir.remove(_))
+
+    for (lifeCycleToAdd <- currentLifecycles) {
+      // These are the ones who are not in the currently enabled set of lifecycles
+      // so we deploy and add
+      LOG.info("Deploying artifact " + lifeCycleToAdd.getFullyQualifiedModelName())
+      deployArtifact(lifeCycleToAdd)
     }
   }
 
@@ -158,17 +162,19 @@ extends Runnable {
       // 2) Create a new Jetty template to map to the war file
       // Template is (fullyQualifiedName=warFileBase)
       val templateDirName = String.format("%s=%s", fullyQualifiedName,
-          artifact.getFullyQualifiedModelName());
+        artifact.getFullyQualifiedModelName());
 
       val tempTemplateDir = new File(Files.createTempDir(), "WEB-INF")
       tempTemplateDir.mkdirs()
 
       translateFile(JETTY_TEMPLATE_FILE, new File(tempTemplateDir, "template.xml"),
         Map[String, String]())
-      artifactFile.renameTo(new File(WEBAPPS_FOLDER, finalArtifactName))
+      artifactFile.renameTo(new File(mBaseDir,
+        String.format("%s/%s", WEBAPPS_FOLDER, finalArtifactName)))
 
-      val moveResult = tempTemplateDir.getParentFile().renameTo(new File(TEMPLATES_FOLDER,
-          templateDirName))
+      val moveResult = tempTemplateDir.getParentFile().
+        renameTo(new File(mBaseDir, String.format("%s/%s", TEMPLATES_FOLDER, templateDirName)))
+
       // 3) Create a new instance.
       createNewInstance(artifact, fullyQualifiedName, templateParamValues)
 
@@ -195,12 +201,14 @@ extends Runnable {
     tempInstanceDir.mkdir()
 
     val instanceDirName = String.format("%s=%s", templateName,
-        artifact.getFullyQualifiedModelName())
+      artifact.getFullyQualifiedModelName())
 
     translateFile(OVERLAY_FILE, new File(tempInstanceDir, "overlay.xml"), bookmarkParams)
     translateFile(WEB_OVERLAY_FILE, new File(tempInstanceDir, "web-overlay.xml"), bookmarkParams)
 
-    val finalInstanceDir = new File(INSTANCES_FOLDER, instanceDirName)
+    val finalInstanceDir = new File(mBaseDir,
+        String.format("%s/%s", INSTANCES_FOLDER, instanceDirName))
+
     tempInstanceDir.getParentFile().renameTo(finalInstanceDir)
 
     mLifecycleToInstanceDir.put(artifact, finalInstanceDir)
@@ -220,7 +228,7 @@ extends Runnable {
    *        on the fully qualified name of the ModelArtifact.
    */
   private def translateFile(filePath: String, targetFile: File,
-      bookmarkParams: Map[String, String]) {
+    bookmarkParams: Map[String, String]) {
     val fileStream = Source.fromInputStream(getClass.getResourceAsStream(filePath))
     val fileWriter = new PrintWriter(targetFile)
     for (line <- fileStream.getLines) {
