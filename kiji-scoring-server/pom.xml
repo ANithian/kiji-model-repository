@@ -22,6 +22,10 @@
     <relativePath>..</relativePath>
   </parent>
 
+  <properties>
+    <scalatest.version>2.0.M5b</scalatest.version>
+  </properties>
+
   <dependencies>
 
     <!-- Jetty Dependencies -->
@@ -201,6 +205,20 @@
       <artifactId>kiji-schema</artifactId>
       <version>${kiji-schema.version}</version>
       <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-client</artifactId>
+      <version>${jetty.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.scalatest</groupId>
+      <artifactId>scalatest_${scala.version}</artifactId>
+      <version>${scalatest.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
