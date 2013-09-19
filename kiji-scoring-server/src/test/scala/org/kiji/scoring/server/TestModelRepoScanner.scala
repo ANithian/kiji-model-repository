@@ -82,4 +82,15 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
     tempModelDir
   }
+
+  // TODO remove this once everything is working.
+  "a" should "b" in {
+    val kiji: Kiji = Kiji.Factory.open(KijiURI.newBuilder("kiji://.env/default/").build())
+    val table = kiji.openTable("users")
+    val writer = table.openTableWriter()
+    writer.put(table.getEntityId(12345L: java.lang.Long), "info", "email", "afeldstein@wibidata.com")
+    writer.close()
+    table.release()
+    kiji.release()
+  }
 }
