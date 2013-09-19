@@ -20,10 +20,7 @@
 package org.kiji.web;
 
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
-
-import com.google.common.collect.Lists;
 
 import org.kiji.mapreduce.kvstore.KeyValueStore;
 import org.kiji.mapreduce.kvstore.KeyValueStoreReader;
@@ -40,7 +37,7 @@ import org.kiji.schema.KijiColumnName;
 public class KijiWebContext implements ProducerContext {
 
   private KeyValueStoreReaderFactory mKVStoreFactory = null;
-  private List<KijiRestCell> mOutputCells = Lists.newArrayList();
+  private KijiRestCell mOutputCell = null;
   private String mFamily = null;
   private String mQualifier = null;
 
@@ -62,8 +59,8 @@ public class KijiWebContext implements ProducerContext {
    *
    * @return the list of written cells that would have been dumped to HBase.
    */
-  public List<KijiRestCell> getWrittenCells() {
-    return mOutputCells;
+  public KijiRestCell getWrittenCell() {
+    return mOutputCell;
   }
 
   @Override
@@ -108,21 +105,21 @@ public class KijiWebContext implements ProducerContext {
 
   @Override
   public <T> void put(T value) throws IOException {
-    mOutputCells.add(new KijiRestCell(mFamily, mQualifier, System.currentTimeMillis(), value));
+    mOutputCell = new KijiRestCell(mFamily, mQualifier, System.currentTimeMillis(), value);
   }
 
   @Override
   public <T> void put(long timestamp, T value) throws IOException {
-    mOutputCells.add(new KijiRestCell(mFamily, mQualifier, timestamp, value));
+    mOutputCell = new KijiRestCell(mFamily, mQualifier, timestamp, value);
   }
 
   @Override
   public <T> void put(String qualifier, T value) throws IOException {
-    mOutputCells.add(new KijiRestCell(mFamily, qualifier, System.currentTimeMillis(), value));
+    mOutputCell = new KijiRestCell(mFamily, qualifier, System.currentTimeMillis(), value);
   }
 
   @Override
   public <T> void put(String qualifier, long timestamp, T value) throws IOException {
-    mOutputCells.add(new KijiRestCell(mFamily, qualifier, timestamp, value));
+    mOutputCell = new KijiRestCell(mFamily, qualifier, timestamp, value);
   }
 }

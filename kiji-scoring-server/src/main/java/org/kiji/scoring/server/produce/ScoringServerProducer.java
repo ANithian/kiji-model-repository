@@ -74,16 +74,16 @@ public class ScoringServerProducer extends KijiProducer {
 
     final String scoreJSON = IOUtils.toString(scoringEndpoint.openStream(), "UTF-8");
 
-    final ScoringServerResponse[] responses = GSON.fromJson(scoreJSON, ScoringServerResponse[].class);
+    final ScoringServerResponse response = GSON.fromJson(scoreJSON, ScoringServerResponse.class);
 
-    debug(scoringEndpoint, scoreJSON, responses);
+    debug(scoringEndpoint, scoreJSON, response);
 
-    context.put(FromJson.fromJsonString(responses[0].value, new Schema.Parser().parse(responses[0].schema)));
+    context.put(FromJson.fromJsonString(response.value, new Schema.Parser().parse(response.schema)));
   }
 
-  private void debug(URL scoringEndpoint, String scoreJSON, ScoringServerResponse[] responses) {
+  private void debug(URL scoringEndpoint, String scoreJSON, ScoringServerResponse response) {
     System.out.println("scoring endpoint is: " + scoringEndpoint.toString());
     System.out.println("scoreJSON is: " + scoreJSON);
-    System.out.println("value is: " + responses[0].value);
+    System.out.println("value is: " + response.value);
   }
 }
