@@ -19,22 +19,25 @@
 
 package org.kiji.scoring.server
 
-import org.kiji.modelrepo.KijiModelRepository
-import scala.collection.mutable.Map
 import java.io.File
-import org.eclipse.jetty.overlays.OverlayedAppProvider
-import org.apache.commons.io.FilenameUtils
-import org.apache.commons.io.FileUtils
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import scala.collection.JavaConversions._
-import org.kiji.modelrepo.ModelArtifact
-import com.google.common.io.Files
-import scala.io.Source
 import java.io.PrintWriter
-import org.kiji.schema.Kiji
-import org.kiji.schema.KijiURI
-import scala.collection.mutable.ListBuffer
+
+import scala.collection.JavaConversions.asScalaSet
+import scala.collection.Map
+import scala.collection.mutable.{ Map => MutableMap }
+import scala.io.Source
+
+import org.apache.commons.io.FileUtils
+import org.apache.commons.io.FilenameUtils
+import org.eclipse.jetty.overlays.OverlayedAppProvider
+import org.kiji.modelrepo.KijiModelRepository
+import org.kiji.modelrepo.ModelArtifact
+import org.slf4j.LoggerFactory
+
+import org.kiji.modelrepo.KijiModelRepository
+import org.kiji.modelrepo.ModelArtifact
+
+import com.google.common.io.Files
 
 /**
  * Performs the actual deployment/undeployment of model lifecycles by scanning the model
@@ -43,8 +46,7 @@ import scala.collection.mutable.ListBuffer
  * remote scoring.
  */
 class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int,
-  mBaseDir: File)
-  extends Runnable {
+                       mBaseDir: File) extends Runnable {
 
   val LOG = LoggerFactory.getLogger(classOf[ModelRepoScanner])
 
@@ -72,7 +74,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *  Stores a set of deployed lifecycles (identified by group.artifact-version) mapping
    *  to the actual folder that houses this lifecycle.
    */
-  private val mLifecycleToInstanceDir = Map[ModelArtifact, File]()
+  private val mLifecycleToInstanceDir = MutableMap[ModelArtifact, File]()
 
   /**
    *  Stores a map of model artifact locations to their corresponding template name so that
@@ -81,7 +83,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *  in the model repo and the value is the fully qualified name of the lifecycle
    *  (group.artifact-version) to which this location is mapped to.
    */
-  private val mDeployedWarFiles = Map[String, String]()
+  private val mDeployedWarFiles = MutableMap[String, String]()
 
   /**
    * Turns off the internal run flag to safely stop the scanning of the model repository
@@ -91,7 +93,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     mIsRunning = false
   }
 
-  def run(): Unit = {
+  def run() {
     while (mIsRunning) {
       LOG.debug("Scanning model repository for changes...")
       checkForUpdates
@@ -101,29 +103,31 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
 
   def checkForUpdates() {
     val currentLifecycles = getAllEnabledLifecycles
-    val toRemove = ListBuffer[ModelArtifact]()
 
-    // Detect changes (add or remove)
-    for ((lifeCycle, location) <- mLifecycleToInstanceDir) {
-      if (currentLifecycles.contains(lifeCycle)) {
-        currentLifecycles.remove(lifeCycle)
-      } else {
-        // We know that lifeCycle doesn't exist in the set of currently enabled
-        // lifecycles so it's an undeploy
-        LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
-          " location = " + location)
-        FileUtils.deleteDirectory(location)
-        toRemove.add(lifeCycle)
-      }
-    }
-    toRemove.foreach(mLifecycleToInstanceDir.remove(_))
+    // Split the lifecycle map into those that are already deployed and those that
+    // are yet to be deployed (based on whether or not the currently enabled lifecycles
+    // contain the deployed lifecycle.
+    val (alreadyDeployed, toUndeploy) =
+      mLifecycleToInstanceDir.partition(kv => currentLifecycles.contains(kv._1))
 
-    for (lifeCycleToAdd <- currentLifecycles) {
+    // For each lifecycle to undeploy, remove it.
+    toUndeploy.map(kv => {
+      val (lifeCycle, location) = kv
+      // We know that lifeCycle doesn't exist in the set of currently enabled
+      // lifecycles so it's an undeploy
+      LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
+        " location = " + location)
+      FileUtils.deleteDirectory(location)
+    })
+
+    // Now find the set of lifecycles to add by diffing the current with the already
+    // deployed and add those.
+    currentLifecycles.diff(alreadyDeployed.keySet).map(lifeCycle => {
       // These are the ones who are not in the currently enabled set of lifecycles
       // so we deploy and add
-      LOG.info("Deploying artifact " + lifeCycleToAdd.getFullyQualifiedModelName())
-      deployArtifact(lifeCycleToAdd)
-    }
+      LOG.info("Deploying artifact " + lifeCycle.getFullyQualifiedModelName())
+      deployArtifact(lifeCycle)
+    })
   }
 
   /**
@@ -137,15 +141,16 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     // If we have deployed this artifact's war file before:
     val fullyQualifiedName = artifact.getFullyQualifiedModelName()
 
+    val contextPath = (artifact.getGroupName() + "/" +
+      artifact.getArtifactName()).replace('.', '/') + "/" + artifact.getModelVersion().toString()
     // Populate a map of the various placeholder values to substitute in files
-    val templateParamValues = Map[String, String]()
-    templateParamValues.put(MODEL_ARTIFACT, artifact.getArtifactName())
-    templateParamValues.put(MODEL_GROUP, artifact.getGroupName())
-    templateParamValues.put(MODEL_NAME, artifact.getFullyQualifiedModelName())
-    templateParamValues.put(MODEL_VERSION, artifact.getModelVersion().toString())
-    templateParamValues.put(MODEL_REPO_URI, mKijiModelRepo.getURI().toString())
-    templateParamValues.put(CONTEXT_PATH, (artifact.getGroupName() + "/" +
-      artifact.getArtifactName()).replace('.', '/') + "/" + artifact.getModelVersion().toString())
+    val templateParamValues = Map[String, String](
+      MODEL_ARTIFACT -> artifact.getArtifactName(),
+      MODEL_GROUP -> artifact.getGroupName(),
+      MODEL_NAME -> artifact.getFullyQualifiedModelName(),
+      MODEL_VERSION -> artifact.getModelVersion().toString(),
+      MODEL_REPO_URI -> mKijiModelRepo.getURI().toString(),
+      CONTEXT_PATH -> contextPath)
 
     if (mDeployedWarFiles.contains(artifact.getLocation())) {
       // 1) Create a new instance and done.
@@ -156,8 +161,8 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
       // 1) Download the artifact to a temporary location
       val artifactFile = File.createTempFile("artifact", "war")
       // The artifact downloaded should reflect the name of the file that was uploaded
-      val finalArtifactName = String.format("%s.%s",artifact.getGroupName(),
-           new File(artifact.getLocation()).getName())
+      val finalArtifactName = String.format("%s.%s", artifact.getGroupName(),
+        new File(artifact.getLocation()).getName())
 
       artifact.downloadArtifact(artifactFile)
 
@@ -195,7 +200,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *        on the fully qualified name of the ModelArtifact.
    */
   private def createNewInstance(artifact: ModelArtifact, templateName: String,
-    bookmarkParams: Map[String, String]) = {
+                                bookmarkParams: Map[String, String]) = {
     // This will create a new instance by leveraging the template files on the classpath
     // and create the right directory. Maybe first create the directory in a temp location and
     // move to the right place.
@@ -209,7 +214,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     translateFile(WEB_OVERLAY_FILE, new File(tempInstanceDir, "web-overlay.xml"), bookmarkParams)
 
     val finalInstanceDir = new File(mBaseDir,
-        String.format("%s/%s", INSTANCES_FOLDER, instanceDirName))
+      String.format("%s/%s", INSTANCES_FOLDER, instanceDirName))
 
     tempInstanceDir.getParentFile().renameTo(finalInstanceDir)
 
@@ -230,20 +235,22 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *        on the fully qualified name of the ModelArtifact.
    */
   private def translateFile(filePath: String, targetFile: File,
-    bookmarkParams: Map[String, String]) {
+                            bookmarkParams: Map[String, String]) {
     val fileStream = Source.fromInputStream(getClass.getResourceAsStream(filePath))
     val fileWriter = new PrintWriter(targetFile)
-    for (line <- fileStream.getLines) {
-      val newLine = if (line.matches(".*?%[A-Z_]+%.*?")) {
-        bookmarkParams.foldLeft(line) { (result, currentKV) =>
-          val (key, value) = currentKV
-          result.replace("%" + key + "%", value)
+
+    fileStream.getLines.foreach( line => {
+      val newLine =
+        if (line.matches(".*?%[A-Z_]+%.*?")) {
+          bookmarkParams.foldLeft(line) { (result, currentKV) =>
+            val (key, value) = currentKV
+            result.replace("%" + key + "%", value)
+          }
+        } else {
+          line
         }
-      } else {
-        line
-      }
       fileWriter.println(newLine)
-    }
+    })
 
     fileWriter.close()
   }
@@ -260,9 +267,9 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    * For instances, "name" is the name of the template from above and "value" is the concrete
    * name that can be arbitrarily given.
    *
-   * @returns a 2-tuple containing the two aforementioned parts of the specified directory.
+   * @return a 2-tuple containing the two aforementioned parts of the specified directory.
    */
-  private def parseContextDirectoryName(directoryName: String): (String, String) = {
+  private def parseContextDirectoryName(directoryName: String): (String, Option[String]) = {
     // Borrowed from OverlayedAppProvider.ClassifiedOverlay constructor
 
     // Templates/Instances can be of the format "template=classifier" or "template--classifier"
@@ -277,9 +284,9 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
 
     val nameAndClassifier = if (separatorLoc._1 >= 0) {
       (directoryName.substring(0, separatorLoc._1),
-        directoryName.substring(separatorLoc._1 + separatorLoc._2))
+        Some(directoryName.substring(separatorLoc._1 + separatorLoc._2)))
     } else {
-      (directoryName, null)
+      (directoryName, None)
     }
 
     return nameAndClassifier
@@ -287,7 +294,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
 
   /**
    * Returns all the currently enabled lifecycles from the model repository.
-   * @returns all the currently enabled lifecycles from the model repository.
+   * @return all the currently enabled lifecycles from the model repository.
    */
   private def getAllEnabledLifecycles = {
     mKijiModelRepo.getModelLifecycles(null, 0, Long.MaxValue, 1, true)

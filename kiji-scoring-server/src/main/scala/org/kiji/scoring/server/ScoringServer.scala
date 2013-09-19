@@ -28,6 +28,8 @@ import org.eclipse.jetty.server.handler.ContextHandlerCollection
 import org.eclipse.jetty.server.handler.DefaultHandler
 import org.eclipse.jetty.server.handler.HandlerCollection
 import org.kiji.modelrepo.KijiModelRepository
+import org.kiji.schema.Kiji
+import org.kiji.schema.KijiURI
 
 import org.kiji.modelrepo.KijiModelRepository
 import org.kiji.schema.Kiji
@@ -66,7 +68,7 @@ object ScoringServer {
   /**
    * Constructs a Jetty Server instance configured using the conf/configuration.json.
    * @param confFile is the configuration file used to
-   * @returns a constructed Jetty server.
+   * @return a constructed Jetty server.
    */
   def getServer(baseDir: File):Server = {
 
@@ -114,7 +116,7 @@ object ScoringServer {
    * Checks that the server is started in the right location by ensuring the presence of a few key
    * directories under the conf, models and logs folder.
    *
-   * @returns whether or not the key set of folders exist or not.
+   * @return whether or not the key set of folders exist or not.
    */
   def startedInProperLocation: Boolean = {
     val filesToCheck = Array(CONF_FOLDER + "/" + CONF_FILE, MODELS_FOLDER + "/webapps",
@@ -134,7 +136,7 @@ object ScoringServer {
    * Returns the ServerConfiguration object constructed from conf/configuration.json.
    *
    * @param confFile is the location of the configuration used to configure the server.
-   * @returns the ServerConfiguration object constructed from conf/configuration.json.
+   * @return the ServerConfiguration object constructed from conf/configuration.json.
    */
   def getConfig(confFile: File): ServerConfiguration = {
     val configMapper = new ObjectMapper

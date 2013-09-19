@@ -375,8 +375,8 @@ public class ModelArtifact {
   public static String getModelName(String groupName, String artifactName) {
     Preconditions.checkNotNull(groupName);
     Preconditions.checkNotNull(artifactName);
-    Preconditions.checkArgument(groupName.length() > 0, "Group name must be nonempty string.");
-    Preconditions.checkArgument(artifactName.length() > 0,
+    Preconditions.checkArgument(!groupName.isEmpty(), "Group name must be nonempty string.");
+    Preconditions.checkArgument(!artifactName.isEmpty(),
         "Artifact name must be nonempty string.");
     return (groupName + "." + artifactName).intern();
   }
