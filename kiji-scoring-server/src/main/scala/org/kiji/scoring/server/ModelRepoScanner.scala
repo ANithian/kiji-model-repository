@@ -155,14 +155,16 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
       // If not:
       // 1) Download the artifact to a temporary location
       val artifactFile = File.createTempFile("artifact", "war")
-      val finalArtifactName = artifact.getFullyQualifiedModelName() + ".war"
+      // The artifact downloaded should reflect the name of the file that was uploaded
+      val finalArtifactName = String.format("%s.%s",artifact.getGroupName(),
+           new File(artifact.getLocation()).getName())
 
       artifact.downloadArtifact(artifactFile)
 
       // 2) Create a new Jetty template to map to the war file
       // Template is (fullyQualifiedName=warFileBase)
       val templateDirName = String.format("%s=%s", fullyQualifiedName,
-        artifact.getFullyQualifiedModelName());
+        FilenameUtils.getBaseName(finalArtifactName));
 
       val tempTemplateDir = new File(Files.createTempDir(), "WEB-INF")
       tempTemplateDir.mkdirs()
