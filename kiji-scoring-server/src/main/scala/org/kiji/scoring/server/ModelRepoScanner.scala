@@ -256,43 +256,6 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
   }
 
   /**
-   * Given a directory name, will extract a tuple of template name and classifier name. In Jetty's
-   * overlay deployer, the template directory and instance directory have a name formatted like:
-   * (name=value OR name--value). Much of this code was borrowed from Jetty and converted
-   * to Scala with some names changed for readability purposes.
-   * <br/><br/>
-   * For templates, "name" is the given abstract template name and "value" is the concrete
-   * base name of the war file (without the .war extension).
-   * <br/>
-   * For instances, "name" is the name of the template from above and "value" is the concrete
-   * name that can be arbitrarily given.
-   *
-   * @return a 2-tuple containing the two aforementioned parts of the specified directory.
-   */
-  private def parseContextDirectoryName(directoryName: String): (String, Option[String]) = {
-    // Borrowed from OverlayedAppProvider.ClassifiedOverlay constructor
-
-    // Templates/Instances can be of the format "template=classifier" or "template--classifier"
-    // e.g. template1=something.war and then instance1=template1
-    val equalLoc = directoryName.indexOf('=');
-
-    val separatorLoc = if (equalLoc < 0) {
-      (directoryName.indexOf("--"), 2)
-    } else {
-      (equalLoc, 1)
-    }
-
-    val nameAndClassifier = if (separatorLoc._1 >= 0) {
-      (directoryName.substring(0, separatorLoc._1),
-        Some(directoryName.substring(separatorLoc._1 + separatorLoc._2)))
-    } else {
-      (directoryName, None)
-    }
-
-    return nameAndClassifier
-  }
-
-  /**
    * Returns all the currently enabled lifecycles from the model repository.
    * @return all the currently enabled lifecycles from the model repository.
    */
