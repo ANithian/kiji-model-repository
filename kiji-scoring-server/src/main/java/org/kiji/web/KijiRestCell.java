@@ -124,8 +124,8 @@ public class KijiRestCell {
   public static Schema getSchema(
       final Object value
   ) {
-    if (value instanceof IndexedRecord) {
-      return ((IndexedRecord) value).getSchema();
+    if (value instanceof GenericContainer) {
+      return ((GenericContainer) value).getSchema();
     }
     final Schema primitiveSchema = AvroCellEncoder.PRIMITIVE_SCHEMAS.get(value.getClass().getCanonicalName());
     if (null != primitiveSchema) {
