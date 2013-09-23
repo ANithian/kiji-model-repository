@@ -259,6 +259,6 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository,
    * @return all the currently enabled lifecycles from the model repository.
    */
   private def getAllEnabledLifecycles = {
-    mKijiModelRepo.getModelLifecycles(null, 0, Long.MaxValue, 1, true)
+    mKijiModelRepo.getModelLifecycles(null, 1, true)
   }
 }

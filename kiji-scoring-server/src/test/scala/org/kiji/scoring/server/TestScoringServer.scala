@@ -102,8 +102,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
     val response = TestUtils.scoringServerResponse(connector.getLocalPort(),
       "org/kiji/test/sample_lifecycle/0.0.1/?eid=[12345]")
     server.stop()
-
-    assert(response.get("value") == EMAIL_ADDRESS.length())
+    assert(Integer.parseInt(response.get("value").toString) == EMAIL_ADDRESS.length())
   }
 
   "ScoringServer" should "hot undeploy a model lifecycle" in {
@@ -128,7 +127,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
     val response = TestUtils.scoringServerResponse(connector.getLocalPort(),
       "org/kiji/test/sample_lifecycle/0.0.1/?eid=[12345]")
 
-    assert(response.get("value") == EMAIL_ADDRESS.length())
+    assert(Integer.parseInt(response.get("value").toString) == EMAIL_ADDRESS.length())
 
     val modelRepoTable = mFakeKiji.openTable("model_repo")
     val writer = modelRepoTable.openTableWriter()
