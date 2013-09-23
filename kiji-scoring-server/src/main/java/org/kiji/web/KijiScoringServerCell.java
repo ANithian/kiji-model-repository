@@ -79,6 +79,10 @@ public class KijiScoringServerCell {
     mQualifier = qualifier;
   }
 
+  /** Dummy constructor for Jackson **/
+  public KijiScoringServerCell() {
+
+  }
   /**
    * Returns the underlying cell's timestamp.
    *
