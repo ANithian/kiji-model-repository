@@ -25,10 +25,10 @@ import java.nio.charset.Charset;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericContainer;
 import org.apache.avro.generic.GenericDatumWriter;
-import org.apache.avro.generic.IndexedRecord;
 import org.apache.avro.io.DatumWriter;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.io.JsonEncoder;
@@ -43,7 +43,7 @@ import org.kiji.schema.impl.AvroCellEncoder;
  * deserialize this back to an Avro object).
  */
 @JsonPropertyOrder({ "timestamp", "value" })
-public class KijiRestCell {
+public class KijiScoringServerCell {
 
   @JsonProperty("family")
   private String mFamily;
@@ -67,13 +67,13 @@ public class KijiRestCell {
    * @param qualifier is the qualifier of the cell.
    * @param timestamp is the timestamp of the cell.
    * @param value is the cell's value. If this is an Avro object, then it will be serialized
-   *     to JSON and returned as a string literal containing JSON data.
+   *        to JSON and returned as a string literal containing JSON data.
    * @throws IOException if there is a problem serializing the value into JSON.
    */
-  public KijiRestCell(String family, String qualifier, Long timestamp, Object value)
+  public KijiScoringServerCell(String family, String qualifier, Long timestamp, Object value)
       throws IOException {
     mTimestamp = timestamp;
-    mValue = value.toString();
+    mValue = getJsonString(value);
     mSchema = getSchema(value).toString();
     mFamily = family;
     mQualifier = qualifier;
@@ -100,37 +100,52 @@ public class KijiRestCell {
   /**
    * Returns an encoded JSON string for the given Avro object.
    *
-   * @param record is the record to encode
+   * @param inputRecord is the record to encode
    * @return the JSON string representing this Avro object.
    *
    * @throws IOException if there is an error.
    */
-  public static String getJsonString(GenericContainer record) throws IOException {
-    ByteArrayOutputStream os = new ByteArrayOutputStream();
-    JsonEncoder encoder = EncoderFactory.get().jsonEncoder(record.getSchema(), os);
-    DatumWriter<GenericContainer> writer = new GenericDatumWriter<GenericContainer>();
-    if (record instanceof SpecificRecord) {
-      writer = new SpecificDatumWriter<GenericContainer>();
+  private static String getJsonString(Object inputRecord) throws IOException {
+
+    String jsonString = null;
+
+    if (inputRecord instanceof GenericContainer) {
+      GenericContainer record = (GenericContainer) inputRecord;
+      ByteArrayOutputStream os = new ByteArrayOutputStream();
+      JsonEncoder encoder = EncoderFactory.get().jsonEncoder(record.getSchema(), os);
+      DatumWriter<GenericContainer> writer = new GenericDatumWriter<GenericContainer>();
+      if (record instanceof SpecificRecord) {
+        writer = new SpecificDatumWriter<GenericContainer>();
+      }
+
+      writer.setSchema(record.getSchema());
+      writer.write(record, encoder);
+      encoder.flush();
+      jsonString = new String(os.toByteArray(), Charset.forName("UTF-8"));
+      os.close();
+    } else {
+      jsonString = inputRecord.toString();
     }
 
-    writer.setSchema(record.getSchema());
-    writer.write(record, encoder);
-    encoder.flush();
-    String jsonString = new String(os.toByteArray(), Charset.forName("UTF-8"));
-    os.close();
     return jsonString;
   }
 
-  public static Schema getSchema(
-      final Object value
-  ) {
+  /**
+   * Returns the Avro Schema for this value.
+   *
+   * @param value is the record whose schema to return
+   * @return the Schema object of the input value.
+   */
+  private static Schema getSchema(final Object value) {
     if (value instanceof GenericContainer) {
       return ((GenericContainer) value).getSchema();
     }
-    final Schema primitiveSchema = AvroCellEncoder.PRIMITIVE_SCHEMAS.get(value.getClass().getCanonicalName());
+    final Schema primitiveSchema = AvroCellEncoder.PRIMITIVE_SCHEMAS
+        .get(value.getClass().getCanonicalName());
     if (null != primitiveSchema) {
       return primitiveSchema;
     }
-    throw new RuntimeException(String.format("Unsupported output type found.  Class: %s", value.getClass().getCanonicalName()));
+    throw new RuntimeException(String.format("Unsupported output type found."
+        + "Class: %s", value.getClass().getCanonicalName()));
   }
 }
