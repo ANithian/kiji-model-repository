@@ -39,6 +39,7 @@ import org.kiji.schema.util.InstanceBuilder
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.io.Files
+import org.kiji.scoring.server.TestUtils._
 
 class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
@@ -48,7 +49,7 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
   before {
     val builder = new InstanceBuilder("default");
     mFakeKiji = builder.build();
-    mTempHome = setupServerEnvironment
+    mTempHome = setupServerEnvironment(mFakeKiji.getURI())
     KijiModelRepository.install(mFakeKiji, Files.createTempDir().toURI())
   }
 
@@ -58,7 +59,9 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
   "ModelRepoScanner" should "deploy a single lifecycle" in {
     val modelRepo = KijiModelRepository.open(mFakeKiji)
-    deploySampleLifecycle("0.0.1")
+    val bogusArtifact = new File(mTempHome,"conf/configuration.json").getAbsolutePath()
+
+    deploySampleLifecycle(mFakeKiji, bogusArtifact, "0.0.1")
 
     val scanner = new ModelRepoScanner(modelRepo, 2, mTempHome)
     scanner.checkForUpdates
@@ -76,7 +79,9 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
   "ModelRepoScanner" should "undeploy a single lifecycle" in {
     val modelRepo = KijiModelRepository.open(mFakeKiji)
-    deploySampleLifecycle("0.0.1")
+    val bogusArtifact = new File(mTempHome,"conf/configuration.json").getAbsolutePath()
+
+    deploySampleLifecycle(mFakeKiji,bogusArtifact, "0.0.1")
 
     val scanner = new ModelRepoScanner(modelRepo, 2, mTempHome)
     scanner.checkForUpdates
@@ -98,9 +103,10 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
   "ModelRepoScanner" should "link multiple lifecycles to the same artifact" in {
     val modelRepo = KijiModelRepository.open(mFakeKiji)
+    val bogusArtifact = new File(mTempHome,"conf/configuration.json").getAbsolutePath()
 
-    deploySampleLifecycle("0.0.1")
-    deploySampleLifecycle("0.0.2")
+    deploySampleLifecycle(mFakeKiji,bogusArtifact, "0.0.1")
+    deploySampleLifecycle(mFakeKiji,bogusArtifact, "0.0.2")
 
     // Force the location of 0.0.2 to be that of 0.0.1
     val modelRepoTable = mFakeKiji.openTable(KijiModelRepository.MODEL_REPO_TABLE_NAME)
@@ -131,9 +137,10 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
 
   "ModelRepoScanner" should "undeploy an artifact after multiple lifecycles have been deployed" in {
     val modelRepo = KijiModelRepository.open(mFakeKiji)
+    val bogusArtifact = new File(mTempHome,"conf/configuration.json").getAbsolutePath()
 
-    deploySampleLifecycle("0.0.1")
-    deploySampleLifecycle("0.0.2")
+    deploySampleLifecycle(mFakeKiji,bogusArtifact, "0.0.1")
+    deploySampleLifecycle(mFakeKiji,bogusArtifact, "0.0.2")
 
     // Force the location of 0.0.2 to be that of 0.0.1
     val modelRepoTable = mFakeKiji.openTable(KijiModelRepository.MODEL_REPO_TABLE_NAME)
@@ -165,44 +172,5 @@ class TestModelRepoScanner extends FlatSpec with BeforeAndAfter {
     writer.close()
     modelRepoTable.release()
     modelRepo.close()
-  }
-
-  def deploySampleLifecycle(version: String) {
-    val groupName = "org.kiji.test"
-    val artifactName = "sample_model"
-    val deployTool = new DeployModelRepoTool
-    // Deploy some bogus artifact. We don't care that it's not executable code yet.
-    val args = List(groupName,
-      artifactName,
-      new File(mTempHome, "conf/configuration.json").getAbsolutePath(),
-      "--kiji=" + mFakeKiji.getURI().toString(),
-      "--definition=src/test/resources/org/kiji/samplelifecycle/model_definition.json",
-      "--environment=src/test/resources/org/kiji/samplelifecycle/model_environment.json",
-      "--production-ready=true",
-      "--version=" + version,
-      "--message=Uploading Artifact")
-
-    deployTool.toolMain(args.asJava)
-  }
-
-  def setupServerEnvironment: File = {
-    val tempModelDir = Files.createTempDir()
-    // Create the configuration folder
-    val confFolder = new File(tempModelDir, "conf")
-    confFolder.mkdir()
-    // Create the models folder
-    new File(tempModelDir, "models/webapps").mkdirs()
-    new File(tempModelDir, "models/instances").mkdirs()
-    new File(tempModelDir, "models/templates").mkdirs()
-
-    tempModelDir.deleteOnExit()
-
-    val configMap = Map("port" -> 0, "repo_uri" -> mFakeKiji.getURI().toString(),
-        "repo_scan_interval" -> 2)
-
-    val mapper = new ObjectMapper()
-    mapper.writeValue(new File(confFolder, "configuration.json"), configMap.asJava)
-
-    tempModelDir
   }
 }
