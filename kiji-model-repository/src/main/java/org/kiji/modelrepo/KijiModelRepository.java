@@ -168,7 +168,6 @@ public final class KijiModelRepository implements Closeable {
 
   @Override
   public void close() throws IOException {
-    mKijiMetaTable.close();
     mKijiTable.release();
   }
 
