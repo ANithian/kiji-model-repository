@@ -30,6 +30,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import org.kiji.modelrepo.KijiModelRepository;
+import org.kiji.modelrepo.ModelArtifact;
 import org.kiji.modelrepo.TestUtils;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.Kiji;
@@ -61,9 +62,10 @@ public class TestCheckModelRepoTool extends KijiToolTest {
     final KijiTableWriter writer = table.openTableWriter();
     final EntityId eid1 = table.getEntityId("org.kiji.fake.project", "1.0.0");
     final EntityId eid2 = table.getEntityId("org.kiji.fake.anotherproject", "1.0.0");
-    writer.put(eid1, "model", "location", 1L,
-        mTempDir.toURI().relativize(invalidJar.toURI()).toString());
-    writer.put(eid2, "model", "location", "nonexistent.war");
+    writer.put(eid1, ModelArtifact.MODEL_REPO_FAMILY,
+        ModelArtifact.LOCATION_KEY, 1L, mTempDir.toURI().relativize(invalidJar.toURI()).toString());
+    writer.put(eid2, ModelArtifact.MODEL_REPO_FAMILY,
+        ModelArtifact.LOCATION_KEY, "nonexistent.war");
     writer.close();
     table.release();
 
@@ -88,11 +90,13 @@ public class TestCheckModelRepoTool extends KijiToolTest {
     final KijiTableWriter writer = table.openTableWriter();
     final EntityId eid1 = table.getEntityId("org.kiji.fake.project", "1.0.0");
     final EntityId eid2 = table.getEntityId("org.kiji.fake.anotherproject", "1.0.0");
-    writer.put(eid1, "model", "location", 1L,
-        mTempDir.toURI().relativize(invalidJar.toURI()).toString());
-    writer.put(eid1, "model", "location", 2L,
+    writer.put(eid1, ModelArtifact.MODEL_REPO_FAMILY,
+        ModelArtifact.LOCATION_KEY, 1L, mTempDir.toURI().relativize(invalidJar.toURI()).toString());
+    writer.put(eid1, ModelArtifact.MODEL_REPO_FAMILY,
+        ModelArtifact.LOCATION_KEY, 2L,
         mTempDir.toURI().relativize(artifactJar.toURI()).toString());
-    writer.put(eid2, "model", "location", "nonexistent.war");
+    writer.put(eid2, ModelArtifact.MODEL_REPO_FAMILY,
+        ModelArtifact.LOCATION_KEY, "nonexistent.war");
     writer.close();
     table.release();
 
@@ -104,5 +108,25 @@ public class TestCheckModelRepoTool extends KijiToolTest {
     assertTrue(mToolOutputLines[0].startsWith("1 issues found!"));
     assertTrue(mToolOutputLines[1]
         .startsWith("org.kiji.fake.anotherproject-1.0.0: Unable to find"));
+  }
+
+  @Test
+  public void testSkipNonUploadedModels() throws Exception {
+    // Set up model repository table manually.
+    final KijiTable table = mKiji.openTable(KijiModelRepository.MODEL_REPO_TABLE_NAME);
+    final KijiTableWriter writer = table.openTableWriter();
+    final EntityId eid = table.getEntityId("org.kiji.fake.anotherproject", "1.0.0");
+    writer.put(eid, ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.LOCATION_KEY, "nonexistent.war");
+    writer.put(eid, ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.UPLOADED_KEY, false);
+    writer.close();
+    table.release();
+
+    // Run check model repository.
+    final int status = runTool(new CheckModelRepoTool(),
+        new String[] {"--kiji=" + mKiji.getURI().toString(),
+            "--download-and-validate-artifact=false", });
+    assertEquals(BaseTool.SUCCESS, status);
+    assertEquals(1, mToolOutputLines.length);
+    assertTrue(mToolOutputLines[0].startsWith("0 issues found!"));
   }
 }

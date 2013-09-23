@@ -85,14 +85,6 @@ public final class ListModelRepoTool extends BaseTool implements KijiModelRepoTo
 
   private int mMaxVersionsInteger;
 
-  @Flag(name="timestamp", usage="Min..Max timestamp interval to display,\n"
-      + "\twhere Min and Max represent long-type time in milliseconds since the UNIX Epoch.\n"
-      + "\tE.g. '--timestamp=123..1234', '--timestamp=0..', or '--timestamp=..1234'.")
-  private String mTimestamp = "0..";
-
-  private long mMinTimestamp = 0;
-  private long mMaxTimestamp = Long.MAX_VALUE;
-
   @Override
   protected void validateFlags() throws Exception {
     super.validateFlags();
@@ -101,19 +93,6 @@ public final class ListModelRepoTool extends BaseTool implements KijiModelRepoTo
       mInstanceName = KConstants.DEFAULT_INSTANCE_NAME;
     }
     mInstanceURI = KijiURI.newBuilder(mInstanceName).build();
-
-    // Set up timestamps.
-    final Pattern timestampPattern = Pattern.compile("([0-9]*)\\.\\.([0-9]*)");
-    final Matcher timestampMatcher = timestampPattern.matcher(mTimestamp);
-    if (timestampMatcher.matches()) {
-      mMinTimestamp = ("".equals(timestampMatcher.group(1))) ? 0
-          : Long.parseLong(timestampMatcher.group(1));
-      final String rightEndpoint = timestampMatcher.group(2);
-      mMaxTimestamp = ("".equals(rightEndpoint)) ? Long.MAX_VALUE : Long.parseLong(rightEndpoint);
-    } else {
-      getPrintStream().printf("--timestamp must be like [0-9]*..[0-9]*, instead got '%s'%n",
-          mTimestamp);
-    }
 
     // Set up max-versions.
     if (mMaxVersions.equals("all")) {
@@ -196,8 +175,6 @@ public final class ListModelRepoTool extends BaseTool implements KijiModelRepoTo
     // Query the model repository for a list of entries.
     final Set<ModelArtifact> setOfModels = modelRepository.getModelLifecycles(
         fieldsToPrint,
-        mMinTimestamp,
-        mMaxTimestamp,
         mMaxVersionsInteger,
         mProductionReadyOnly);
 

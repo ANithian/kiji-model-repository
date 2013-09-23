@@ -56,6 +56,7 @@ public class ModelArtifact {
   public static final String LOCATION_KEY = "location";
   public static final String MESSAGES_KEY = "message";
   public static final String PRODUCTION_READY_KEY = "production_ready";
+  public static final String UPLOADED_KEY = "uploaded";
   public static final String MODEL_REPO_FAMILY = "model";
 
   private static final Logger LOG = LoggerFactory.getLogger(ModelArtifact.class);

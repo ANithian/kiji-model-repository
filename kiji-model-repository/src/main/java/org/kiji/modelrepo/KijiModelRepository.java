@@ -51,6 +51,7 @@ import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequestBuilder;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiDeleter;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiRowScanner;
@@ -61,7 +62,9 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.filter.ColumnValueEqualsRowFilter;
+import org.kiji.schema.filter.Filters;
 import org.kiji.schema.filter.FormattedEntityIdRowFilter;
+import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.util.ProtocolVersion;
 /**
@@ -132,6 +135,18 @@ public final class KijiModelRepository implements Closeable {
       LOG.error("Error opening file ", ioe);
     }
   }
+
+  private static final KijiRowFilter UPLOADED_MODEL_FILTER =
+      new ColumnValueEqualsRowFilter(
+          ModelArtifact.MODEL_REPO_FAMILY,
+          ModelArtifact.UPLOADED_KEY,
+          new DecodedCell<Boolean>(Schema.create(Schema.Type.BOOLEAN), true));
+
+  private static final KijiRowFilter PRODUCTION_READY_FILTER =
+      new ColumnValueEqualsRowFilter(
+          ModelArtifact.MODEL_REPO_FAMILY,
+          ModelArtifact.PRODUCTION_READY_KEY,
+          new DecodedCell<Boolean>(Schema.create(Schema.Type.BOOLEAN), true));
 
   /**
    * Opens a KijiModelRepository for a given kiji using the default model repository table name.
@@ -399,46 +414,76 @@ public final class KijiModelRepository implements Closeable {
       final AvroModelDefinition definition,
       final AvroModelEnvironment environment,
       final boolean productionReady,
-      final String message
-      ) throws IOException {
+      final String message) throws IOException {
     // CSON: ParameterNumberCheck
 
-    // Steps:
-    // 1) If the version is not specified, then fetch the latest version given the
-    // group/artifact names. Increment by 0.0.1 ELSE check if row exists and if so, throw exception
-    ProtocolVersion latestVersion = version;
-    if (latestVersion == null) {
-      // Fetch latest version
-      latestVersion = fetchNextVersion(groupName, artifactName);
-    } else {
-      final KijiRowData result = getModelLifeCycle(groupName, artifactName, latestVersion);
-      Preconditions.checkArgument(!result.containsColumn("model", "location"),
-          "Error Version %s exists.", version.toCanonicalString());
-    }
-    // 2) Given the properly formed triplet:
-    // a) Construct final artifact given dependencies
-    // b) Upload artifact to repository
-    // c) Add entry in Kiji table
-    final EntityId eid = mKijiTable.getEntityId(getModelName(groupName, artifactName),
-        latestVersion.toCanonicalString());
+    final String modelName = getModelName(groupName, artifactName);
 
+    // If the version is not specified, then fetch the latest version given the
+    // group/artifact names. Increment by 0.0.1 ELSE check if row exists and if so, throw exception
+    final ProtocolVersion latestVersion =
+        (null == version) ? fetchNextVersion(groupName, artifactName) : version;
+
+    // Start assembling artifact file.
+    // Exception on these steps terminates deployment.
+    final File outputFile = File.createTempFile("final_artifact", ".war");
+    outputFile.deleteOnExit();
+    dependencies.add(artifactFile);
+    mArtifactPackager.generateArtifact(outputFile, dependencies);
+
+    final EntityId eid = mKijiTable.getEntityId(modelName, latestVersion.toCanonicalString());
     final AtomicKijiPutter putter = mKijiTable.getWriterFactory().openAtomicPutter();
     try {
-      File outputFile = File.createTempFile("final_artifact", ".war");
-      outputFile.deleteOnExit();
-      dependencies.add(artifactFile);
-      mArtifactPackager.generateArtifact(outputFile, dependencies);
-      String relativeLocation = mUploader.uploadArtifact(groupName, artifactName, latestVersion,
-          mCurrentBaseStorageURI, outputFile);
+      // Allocate and lock row by setting "model:uploaded" as false.
       putter.begin(eid);
-      putter.put("model", "definition", definition);
-      putter.put("model", "environment", environment);
-      putter.put("model", "location", relativeLocation);
-      putter.put("model", "production_ready", productionReady);
-      if (null != message) {
-        putter.put("model", "message", message);
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.UPLOADED_KEY, false);
+      // Check that row doesn't exist (check uploaded cell) and commit.
+      if (!putter.checkAndCommit(ModelArtifact.MODEL_REPO_FAMILY,
+          ModelArtifact.UPLOADED_KEY,
+          null)) {
+        throw new IllegalArgumentException(
+            String.format("Error Version %s exists.", latestVersion.toCanonicalString()));
       }
-      putter.commit();
+
+      // Model repository row has been reserved, upload artifact.
+      // Upon exception, erase model repository entry and rethrow upload exception.
+      final String location;
+      try {
+        location = mUploader.uploadArtifact(groupName,
+            artifactName,
+            latestVersion,
+            mCurrentBaseStorageURI,
+            outputFile);
+      } catch (final IOException uploadIoe) {
+        // Upon exception, erase previously written model repository entry.
+        final KijiDeleter deleter = mKijiTable.getWriterFactory().openTableWriter();
+        deleter.deleteRow(eid);
+        deleter.close();
+        // Rethrow upload exception.
+        throw uploadIoe;
+      } finally {
+        outputFile.delete();
+      }
+
+      // Put entry to the model repository table.
+      putter.begin(eid);
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.DEFINITION_KEY, definition);
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.ENVIRONMENT_KEY, environment);
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.LOCATION_KEY, location);
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.PRODUCTION_READY_KEY,
+          productionReady);
+      if (null != message) {
+        putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.MESSAGES_KEY, message);
+      }
+      // Enable this entry.
+      putter.put(ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.UPLOADED_KEY, true);
+      // Check that the uploaded field is false and commit.
+      if (!putter.checkAndCommit(ModelArtifact.MODEL_REPO_FAMILY,
+          ModelArtifact.UPLOADED_KEY,
+          false)) {
+        throw new IllegalArgumentException(
+            String.format("Error Version %s exists.", latestVersion.toCanonicalString()));
+      }
     } finally {
       putter.close();
     }
@@ -506,6 +551,11 @@ public final class KijiModelRepository implements Closeable {
       EntityId eid = mKijiTable.getEntityId(getModelName(groupName, artifactName),
           version.toCanonicalString());
       KijiRowData returnRow = reader.get(eid, dataRequest);
+      boolean uploaded = returnRow.<Boolean>getMostRecentValue(
+          ModelArtifact.MODEL_REPO_FAMILY, ModelArtifact.UPLOADED_KEY);
+      if (!uploaded) {
+        throw new IOException("Requested model was not uploaded, therefore not deployed.");
+      }
       return returnRow;
     } finally {
       reader.close();
@@ -532,8 +582,10 @@ public final class KijiModelRepository implements Closeable {
         .newColumnsDef()
         .withMaxVersions(Integer.MAX_VALUE)
         .add("model", "location"));
-    final KijiRowScanner scanner = reader.getScanner(dataRequestBuilder.build(),
-        new KijiScannerOptions());
+    // Filter out all incomplete models.
+    final KijiScannerOptions options = new KijiScannerOptions();
+    options.setKijiRowFilter(KijiModelRepository.UPLOADED_MODEL_FILTER);
+    final KijiRowScanner scanner = reader.getScanner(dataRequestBuilder.build(), options);
     try {
       for (KijiRowData row : scanner) {
         issues.addAll((new ModelArtifact(row, Sets.newHashSet(ModelArtifact.LOCATION_KEY),
@@ -551,19 +603,14 @@ public final class KijiModelRepository implements Closeable {
    * the model repository table.
    *
    * @param fields requested by the user; null returns all fields
-   * @param minTimestamp minimum timestamp of cells to return
-   * @param maxTimestamp maximum timestamp of cells to return
    * @param maxVersions maximum versions of a cell to return
    * @param productionReadyOnly when true returns models whose latest production_ready flag is true.
    * @return a set of model row data from the model repository table.
    * @throws IOException when table can not be properly scanned.
    */
   public Set<ModelArtifact> getModelLifecycles(Set<String> fields,
-      final long minTimestamp,
-      final long maxTimestamp,
       final int maxVersions,
       final boolean productionReadyOnly) throws IOException {
-    Preconditions.checkArgument(minTimestamp <= maxTimestamp);
     Preconditions.checkArgument(maxVersions >= 0);
 
     final Set<ModelArtifact> setOfModels = Sets.newHashSet();
@@ -589,18 +636,16 @@ public final class KijiModelRepository implements Closeable {
       }
     }
     dataRequestBuilder.addColumns(columns);
-    dataRequestBuilder.withTimeRange(minTimestamp, maxTimestamp);
 
     // If only the production ready models are required, add the following filter.
     final KijiScannerOptions options = new KijiScannerOptions();
+    final KijiRowFilter filters;
     if (productionReadyOnly) {
-      final ColumnValueEqualsRowFilter productionReadyFilter =
-          new ColumnValueEqualsRowFilter(
-              ModelArtifact.MODEL_REPO_FAMILY,
-              ModelArtifact.PRODUCTION_READY_KEY,
-              new DecodedCell<Boolean>(Schema.create(Schema.Type.BOOLEAN), true));
-      options.setKijiRowFilter(productionReadyFilter);
+      filters = Filters.and(PRODUCTION_READY_FILTER, KijiModelRepository.UPLOADED_MODEL_FILTER);
+    } else {
+      filters = KijiModelRepository.UPLOADED_MODEL_FILTER;
     }
+    options.setKijiRowFilter(filters);
 
     // Gather all rows and emit.
     final KijiRowScanner scanner = reader.getScanner(dataRequestBuilder.build(), options);

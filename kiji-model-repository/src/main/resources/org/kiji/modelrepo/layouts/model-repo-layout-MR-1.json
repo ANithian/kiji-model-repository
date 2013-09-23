@@ -87,6 +87,14 @@
           "type" : "INLINE",
           "value" : "\"string\""
         }
+      }, {
+        "name" : "uploaded",
+        "description" : "Has the model been uploaded to the repository.",
+        "column_schema" : {
+          "storage" : "UID",
+          "type" : "INLINE",
+          "value" : "\"boolean\""
+        }
       } ]
     } ]
   } ]
