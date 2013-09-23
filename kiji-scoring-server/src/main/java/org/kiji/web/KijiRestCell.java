@@ -25,14 +25,17 @@ import java.nio.charset.Charset;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-
+import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericContainer;
 import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.IndexedRecord;
 import org.apache.avro.io.DatumWriter;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.io.JsonEncoder;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.avro.specific.SpecificRecord;
+
+import org.kiji.schema.impl.AvroCellEncoder;
 
 /**
  * Models what a Kiji cell looks like when returned to the client. If the value set in the cell
@@ -52,7 +55,10 @@ public class KijiRestCell {
   private Long mTimestamp;
 
   @JsonProperty("value")
-  private Object mValue;
+  private String mValue;
+
+  @JsonProperty("schema")
+  private String mSchema;
 
   /**
    * Constructs a KijiRestCell given a timestamp and value.
@@ -67,10 +73,8 @@ public class KijiRestCell {
   public KijiRestCell(String family, String qualifier, Long timestamp, Object value)
       throws IOException {
     mTimestamp = timestamp;
-    mValue = value;
-    if (mValue instanceof GenericContainer) {
-      mValue = getJsonString((GenericContainer) value);
-    }
+    mValue = value.toString();
+    mSchema = getSchema(value).toString();
     mFamily = family;
     mQualifier = qualifier;
   }
@@ -115,5 +119,18 @@ public class KijiRestCell {
     String jsonString = new String(os.toByteArray(), Charset.forName("UTF-8"));
     os.close();
     return jsonString;
+  }
+
+  public static Schema getSchema(
+      final Object value
+  ) {
+    if (value instanceof GenericContainer) {
+      return ((GenericContainer) value).getSchema();
+    }
+    final Schema primitiveSchema = AvroCellEncoder.PRIMITIVE_SCHEMAS.get(value.getClass().getCanonicalName());
+    if (null != primitiveSchema) {
+      return primitiveSchema;
+    }
+    throw new RuntimeException(String.format("Unsupported output type found.  Class: %s", value.getClass().getCanonicalName()));
   }
 }

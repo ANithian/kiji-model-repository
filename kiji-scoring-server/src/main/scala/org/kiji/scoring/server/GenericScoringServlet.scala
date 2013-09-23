@@ -156,7 +156,7 @@ class GenericScoringServlet extends HttpServlet {
       kp.setup(ctx)
       kp.produce(rowData, ctx)
       val mapper = new ObjectMapper()
-      writer.write(mapper.valueToTree(ctx.getWrittenCells()).toString())
+      writer.write(mapper.valueToTree(ctx.getWrittenCell()).toString())
     }
 
     writer.close()

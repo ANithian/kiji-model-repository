@@ -60,19 +60,20 @@ object ScoringServer {
       return
     }
 
-    val server = getServer(null)
+    val server = getServer(None)
     server.start()
     server.join();
   }
 
   /**
    * Constructs a Jetty Server instance configured using the conf/configuration.json.
-   * @param confFile is the configuration file used to
+   * @param confFile is the configuration file used to configure the server.
+   * @param baseDir is the base directory in which the
    * @return a constructed Jetty server.
    */
-  def getServer(baseDir: File):Server = {
+  def getServer(baseDir: Option[File]):Server = {
 
-    val confFile = new File(baseDir, String.format("%s/%s", CONF_FOLDER, CONF_FILE))
+    val confFile = new File(baseDir.get, String.format("%s/%s", CONF_FOLDER, CONF_FILE))
     val config = getConfig(confFile)
 
     val kijiURI = KijiURI.newBuilder(config.repo_uri).build()
@@ -81,7 +82,8 @@ object ScoringServer {
 
     // Start the model lifecycle scanner thread that will scan the model repository
     // for changes.
-    val lifeCycleScanner = new ModelRepoScanner(kijiModelRepo, config.repo_scan_interval, baseDir)
+    val lifeCycleScanner = new ModelRepoScanner(kijiModelRepo, config.repo_scan_interval,
+        baseDir.get)
     val lifeCycleScannerThread = new Thread(lifeCycleScanner)
     lifeCycleScannerThread.start()
 
@@ -92,7 +94,7 @@ object ScoringServer {
     val deploymentManager = new DeploymentManager()
     val overlayedProvider = new OverlayedAppProvider
 
-    overlayedProvider.setScanDir(new File(baseDir, MODELS_FOLDER))
+    overlayedProvider.setScanDir(new File(baseDir.get, MODELS_FOLDER))
     // For now scan this directory once per second.
     overlayedProvider.setScanInterval(1)
 

@@ -89,7 +89,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
     TestUtils.deploySampleLifecycle(mFakeKiji, "0.0.1", jarFile.getAbsolutePath())
     val modelRepo = KijiModelRepository.open(mFakeKiji)
 
-    val server = ScoringServer.getServer(mTempHome.getCanonicalFile())
+    val server = ScoringServer.getServer(Some(mTempHome.getCanonicalFile()))
     server.start()
 
     val connector = server.getConnectors()(0)
@@ -115,7 +115,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
     TestUtils.deploySampleLifecycle(mFakeKiji, "0.0.1", jarFile.getAbsolutePath())
     val modelRepo = KijiModelRepository.open(mFakeKiji)
 
-    val server = ScoringServer.getServer(mTempHome.getCanonicalFile())
+    val server = ScoringServer.getServer(Some(mTempHome.getCanonicalFile()))
     server.start()
 
     val connector = server.getConnectors()(0)
