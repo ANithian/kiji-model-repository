@@ -37,7 +37,7 @@ import org.kiji.schema.KijiColumnName;
 public class KijiWebContext implements ProducerContext {
 
   private KeyValueStoreReaderFactory mKVStoreFactory = null;
-  private KijiRestCell mOutputCell = null;
+  private KijiScoringServerCell mOutputCell = null;
   private String mFamily = null;
   private String mQualifier = null;
 
@@ -59,7 +59,7 @@ public class KijiWebContext implements ProducerContext {
    *
    * @return the list of written cells that would have been dumped to HBase.
    */
-  public KijiRestCell getWrittenCell() {
+  public KijiScoringServerCell getWrittenCell() {
     return mOutputCell;
   }
 
@@ -105,21 +105,21 @@ public class KijiWebContext implements ProducerContext {
 
   @Override
   public <T> void put(T value) throws IOException {
-    mOutputCell = new KijiRestCell(mFamily, mQualifier, System.currentTimeMillis(), value);
+    mOutputCell = new KijiScoringServerCell(mFamily, mQualifier, System.currentTimeMillis(), value);
   }
 
   @Override
   public <T> void put(long timestamp, T value) throws IOException {
-    mOutputCell = new KijiRestCell(mFamily, mQualifier, timestamp, value);
+    mOutputCell = new KijiScoringServerCell(mFamily, mQualifier, timestamp, value);
   }
 
   @Override
   public <T> void put(String qualifier, T value) throws IOException {
-    mOutputCell = new KijiRestCell(mFamily, qualifier, System.currentTimeMillis(), value);
+    mOutputCell = new KijiScoringServerCell(mFamily, qualifier, System.currentTimeMillis(), value);
   }
 
   @Override
   public <T> void put(String qualifier, long timestamp, T value) throws IOException {
-    mOutputCell = new KijiRestCell(mFamily, qualifier, timestamp, value);
+    mOutputCell = new KijiScoringServerCell(mFamily, qualifier, timestamp, value);
   }
 }
