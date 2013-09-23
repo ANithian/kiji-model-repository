@@ -103,7 +103,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
       "org/kiji/test/sample_lifecycle/0.0.1/?eid=[12345]")
     server.stop()
 
-    assert(response.get(0).get("value") == EMAIL_ADDRESS.length())
+    assert(response.get("value") == EMAIL_ADDRESS.length())
   }
 
   "ScoringServer" should "hot undeploy a model lifecycle" in {
@@ -128,14 +128,17 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
     val response = TestUtils.scoringServerResponse(connector.getLocalPort(),
       "org/kiji/test/sample_lifecycle/0.0.1/?eid=[12345]")
 
-    assert(response.get(0).get("value") == EMAIL_ADDRESS.length())
+    assert(response.get("value") == EMAIL_ADDRESS.length())
 
     val modelRepoTable = mFakeKiji.openTable("model_repo")
     val writer = modelRepoTable.openTableWriter()
     writer.put(modelRepoTable.getEntityId(TestUtils.groupName + "." + TestUtils.artifactName,
         "0.0.1"), "model", "production_ready", false)
     writer.close()
+
+    // Same comment on the sleep as above.
     Thread.sleep(5000)
+
     try {
       TestUtils.scoringServerResponse(connector.getLocalPort(),
         "org/kiji/test/sample_lifecycle/0.0.1/?eid=[12345]")
@@ -154,7 +157,7 @@ class TestScoringServer extends FlatSpec with BeforeAndAfter {
    * @param classFile is the class file name to add to the jar file.
    * @param target is the outputstream representing the jar file where the class gets written.
    */
-  def addToJar(classFile: String, target: JarOutputStream) = {
+  def addToJar(classFile: String, target: JarOutputStream) {
     val inStream = classOf[System].getResourceAsStream(classFile)
     val entry = new JarEntry(classFile.substring(1))
     target.putNextEntry(entry)

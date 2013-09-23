@@ -22,48 +22,30 @@ package org.kiji.scoring.server
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.util.HashMap
-
-import org.apache.hadoop.conf.Configuration
-import org.kiji.express.avro.AvroInputSpec
-import org.kiji.express.avro.AvroModelDefinition
-import org.kiji.express.avro.AvroModelEnvironment
-import org.kiji.express.modeling.config.ModelDefinition
-import org.kiji.express.modeling.config.ModelEnvironment
-import org.kiji.express.modeling.framework.ScoreProducer
-import org.kiji.mapreduce.kvstore.KeyValueStore
-import org.kiji.mapreduce.kvstore.impl.KeyValueStoreConfigValidator
-import org.kiji.modelrepo.KijiModelRepository
-import org.kiji.schema.Kiji
-import org.kiji.schema.KijiColumnName
-import org.kiji.schema.KijiURI
-import org.kiji.schema.tools.ToolUtils
-import org.kiji.schema.util.ProtocolVersion
-import org.kiji.schema.util.ToJson
-import org.kiji.web.KijiWebContext
-
-import org.kiji.express.avro.AvroInputSpec
-import org.kiji.express.avro.AvroModelDefinition
-import org.kiji.express.avro.AvroModelEnvironment
-import org.kiji.express.modeling.config.ModelDefinition
-import org.kiji.express.modeling.config.ModelEnvironment
-import org.kiji.express.modeling.framework.ScoreProducer
-import org.kiji.mapreduce.kvstore.KeyValueStore
-import org.kiji.mapreduce.kvstore.impl.KeyValueStoreConfigValidator
-import org.kiji.modelrepo.KijiModelRepository
-import org.kiji.schema.Kiji
-import org.kiji.schema.KijiColumnName
-import org.kiji.schema.KijiURI
-import org.kiji.schema.tools.ToolUtils
-import org.kiji.schema.util.ProtocolVersion
-import org.kiji.schema.util.ToJson
-import org.kiji.web.KijiWebContext
-
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.common.base.Preconditions
-
 import javax.servlet.http.HttpServlet
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
+
+import org.apache.hadoop.conf.Configuration
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.google.common.base.Preconditions
+
+import org.kiji.express.avro.AvroInputSpec
+import org.kiji.express.avro.AvroModelDefinition
+import org.kiji.express.avro.AvroModelEnvironment
+import org.kiji.express.modeling.config.ModelDefinition
+import org.kiji.express.modeling.config.ModelEnvironment
+import org.kiji.express.modeling.framework.ScoreProducer
+import org.kiji.mapreduce.kvstore.KeyValueStore
+import org.kiji.mapreduce.kvstore.impl.KeyValueStoreConfigValidator
+import org.kiji.modelrepo.KijiModelRepository
+import org.kiji.schema.Kiji
+import org.kiji.schema.KijiColumnName
+import org.kiji.schema.KijiURI
+import org.kiji.schema.tools.ToolUtils
+import org.kiji.schema.util.ProtocolVersion
+import org.kiji.schema.util.ToJson
+import org.kiji.web.KijiWebContext
 
 /**
  * Servlet implementation that executes the scoring phase of a model lifecycle deployed

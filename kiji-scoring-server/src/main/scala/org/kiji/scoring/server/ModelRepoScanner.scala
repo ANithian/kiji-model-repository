@@ -22,22 +22,18 @@ package org.kiji.scoring.server
 import java.io.File
 import java.io.PrintWriter
 
-import scala.collection.JavaConversions.asScalaSet
-import scala.collection.Map
+import scala.collection.JavaConverters.asScalaSetConverter
 import scala.collection.mutable.{ Map => MutableMap }
 import scala.io.Source
 
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.FilenameUtils
 import org.eclipse.jetty.overlays.OverlayedAppProvider
-import org.kiji.modelrepo.KijiModelRepository
-import org.kiji.modelrepo.ModelArtifact
 import org.slf4j.LoggerFactory
+import com.google.common.io.Files
 
 import org.kiji.modelrepo.KijiModelRepository
 import org.kiji.modelrepo.ModelArtifact
-
-import com.google.common.io.Files
 
 /**
  * Performs the actual deployment/undeployment of model lifecycles by scanning the model
@@ -45,7 +41,8 @@ import com.google.common.io.Files
  * model repository and deploy the necessary files so that the application is available for
  * remote scoring.
  */
-class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds: Int,
+class ModelRepoScanner(mKijiModelRepo: KijiModelRepository,
+                       mScanIntervalSeconds: Int,
                        mBaseDir: File) extends Runnable {
 
   val LOG = LoggerFactory.getLogger(classOf[ModelRepoScanner])
@@ -101,20 +98,22 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
     }
   }
 
+  /**
+   * Checks the model repository table for updates and deploys/undeploys lifecycles
+   * as necessary.
+   */
   def checkForUpdates() {
-    val currentLifecycles = getAllEnabledLifecycles
+    val allEnabledLifecycles = getAllEnabledLifecycles
 
     // Split the lifecycle map into those that are already deployed and those that
-    // are yet to be deployed (based on whether or not the currently enabled lifecycles
+    // should be undeployed (based on whether or not the currently enabled lifecycles
     // contain the deployed lifecycle.
-    val (alreadyDeployed, toUndeploy) =
-      mLifecycleToInstanceDir.partition(kv => currentLifecycles.contains(kv._1))
+    val (toKeep, toUndeploy) =
+      mLifecycleToInstanceDir.partition(kv => allEnabledLifecycles.contains(kv._1))
 
     // For each lifecycle to undeploy, remove it.
     toUndeploy.map(kv => {
       val (lifeCycle, location) = kv
-      // We know that lifeCycle doesn't exist in the set of currently enabled
-      // lifecycles so it's an undeploy
       LOG.info("Undeploying lifecycle " + lifeCycle.getFullyQualifiedModelName() +
         " location = " + location)
       FileUtils.deleteDirectory(location)
@@ -122,9 +121,7 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
 
     // Now find the set of lifecycles to add by diffing the current with the already
     // deployed and add those.
-    currentLifecycles.diff(alreadyDeployed.keySet).map(lifeCycle => {
-      // These are the ones who are not in the currently enabled set of lifecycles
-      // so we deploy and add
+    allEnabledLifecycles.asScala.diff(toKeep.keySet).map(lifeCycle => {
       LOG.info("Deploying artifact " + lifeCycle.getFullyQualifiedModelName())
       deployArtifact(lifeCycle)
     })
@@ -199,7 +196,8 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *        used when addressing this lifecycle via HTTP which is dynamically populated based
    *        on the fully qualified name of the ModelArtifact.
    */
-  private def createNewInstance(artifact: ModelArtifact, templateName: String,
+  private def createNewInstance(artifact: ModelArtifact,
+                                templateName: String,
                                 bookmarkParams: Map[String, String]) = {
     // This will create a new instance by leveraging the template files on the classpath
     // and create the right directory. Maybe first create the directory in a temp location and
@@ -234,12 +232,13 @@ class ModelRepoScanner(mKijiModelRepo: KijiModelRepository, mScanIntervalSeconds
    *        used when addressing this lifecycle via HTTP which is dynamically populated based
    *        on the fully qualified name of the ModelArtifact.
    */
-  private def translateFile(filePath: String, targetFile: File,
+  private def translateFile(filePath: String,
+                            targetFile: File,
                             bookmarkParams: Map[String, String]) {
     val fileStream = Source.fromInputStream(getClass.getResourceAsStream(filePath))
     val fileWriter = new PrintWriter(targetFile)
 
-    fileStream.getLines.foreach( line => {
+    fileStream.getLines.foreach(line => {
       val newLine =
         if (line.matches(".*?%[A-Z_]+%.*?")) {
           bookmarkParams.foldLeft(line) { (result, currentKV) =>

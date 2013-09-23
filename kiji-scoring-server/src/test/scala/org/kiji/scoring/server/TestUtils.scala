@@ -24,18 +24,12 @@ import java.net.URL
 
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.collection.JavaConverters.seqAsJavaListConverter
-
-import org.kiji.modelrepo.tools.DeployModelRepoTool
-import org.kiji.schema.Kiji
-import org.kiji.schema.KijiURI
-
-import org.kiji.modelrepo.tools.DeployModelRepoTool
-import org.kiji.schema.Kiji
-import org.kiji.schema.KijiURI
-
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.io.Files
 
+import org.kiji.modelrepo.tools.DeployModelRepoTool
+import org.kiji.schema.Kiji
+import org.kiji.schema.KijiURI
 /**
  * Collection of random test utilities.
  */
@@ -108,11 +102,11 @@ object TestUtils {
    *
    * @return the parsed JSON response.
    */
-  def scoringServerResponse(httpPort: Int, endPoint: String): java.util.List[java.util.Map[String, Any]] = {
+  def scoringServerResponse(httpPort: Int, endPoint: String): java.util.Map[String, Any] = {
     val formattedUrl = String.format("http://localhost:%s/%s",
       httpPort: java.lang.Integer, endPoint)
     val endpointUrl = new URL(formattedUrl)
     val jsonMapper = new ObjectMapper
-    jsonMapper.readValue(endpointUrl, classOf[java.util.List[java.util.Map[String, Any]]])
+    jsonMapper.readValue(endpointUrl, classOf[java.util.Map[String, Any]])
   }
 }
